@@ -1,0 +1,1578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BENCHCORE — System Diagnostics</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  :root {
+    --bg: #050810;
+    --panel: #0a0f1e;
+    --border: #1a2540;
+    --accent: #00f5c8;
+    --accent2: #ff4b6e;
+    --accent3: #f7c948;
+    --dim: #2a3a5a;
+    --text: #c8d8f0;
+    --glow: 0 0 18px #00f5c880;
+    --glow2: 0 0 18px #ff4b6e80;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,245,200,0.012) 2px,
+      rgba(0,245,200,0.012) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Grid bg */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,245,200,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,245,200,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  header {
+    position: relative;
+    z-index: 10;
+    padding: 22px 40px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(5,8,16,0.95);
+    backdrop-filter: blur(10px);
+  }
+
+  .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: var(--accent);
+    text-shadow: var(--glow);
+  }
+  .logo span { color: var(--accent2); text-shadow: var(--glow2); }
+
+  .tagline {
+    font-size: 0.7rem;
+    color: var(--dim);
+    letter-spacing: 3px;
+    margin-top: 3px;
+  }
+
+  /* FPS badge */
+  #fps-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0,245,200,0.07);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 8px 16px;
+    box-shadow: var(--glow);
+  }
+  #fps-badge .label { font-size: 0.65rem; color: var(--dim); letter-spacing: 2px; }
+  #fps-val { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; color: var(--accent); }
+
+  /* Nav tabs */
+  nav {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    gap: 0;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  nav button {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 2px;
+    color: var(--dim);
+    background: none;
+    border: none;
+    border-right: 1px solid var(--border);
+    padding: 14px 22px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    text-transform: uppercase;
+  }
+  nav button:hover { color: var(--text); background: rgba(0,245,200,0.04); }
+  nav button.active {
+    color: var(--accent);
+    background: rgba(0,245,200,0.08);
+  }
+  nav button.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  /* Main layout */
+  main {
+    position: relative;
+    z-index: 10;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 20px;
+    padding: 20px 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* Panels */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent) 0%, transparent 80%);
+  }
+
+  .panel-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+    margin-bottom: 14px;
+    text-transform: uppercase;
+  }
+
+  /* Canvas area */
+  #canvas-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  #bench-canvas { display: block; width: 100%; height: 100%; }
+  #canvas-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(5,8,16,0.85);
+    transition: opacity 0.4s;
+  }
+  #canvas-overlay h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 4px;
+    color: var(--accent);
+  }
+  #canvas-overlay p { font-size: 0.7rem; color: var(--dim); letter-spacing: 2px; }
+
+  /* Buttons */
+  .btn {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding: 10px 24px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+  .btn-primary:hover {
+    background: #fff;
+    box-shadow: 0 0 30px var(--accent);
+  }
+  .btn-danger {
+    background: var(--accent2);
+    color: #fff;
+  }
+  .btn-danger:hover { background: #ff7b8e; box-shadow: 0 0 20px var(--accent2); }
+  .btn-warn {
+    background: var(--accent3);
+    color: #000;
+  }
+  .btn-warn:hover { background: #ffd96e; box-shadow: 0 0 20px var(--accent3); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Controls row */
+  .controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    align-items: center;
+  }
+
+  /* Intensity slider */
+  .slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.68rem;
+    color: var(--dim);
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 120px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: var(--glow);
+  }
+
+  /* Score result */
+  #score-box {
+    margin-top: 14px;
+    padding: 12px;
+    background: rgba(0,245,200,0.05);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    display: none;
+    text-align: center;
+  }
+  #score-box .score-num {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2.2rem;
+    color: var(--accent);
+    text-shadow: var(--glow);
+  }
+  #score-box .score-label { font-size: 0.65rem; letter-spacing: 3px; color: var(--dim); }
+  #score-box .score-grade {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem;
+    margin-top: 4px;
+  }
+
+  /* Progress bar */
+  .progress-wrap { margin-top: 10px; }
+  .progress-label { font-size: 0.65rem; color: var(--dim); letter-spacing: 2px; margin-bottom: 5px; }
+  .progress-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #00a0ff);
+    border-radius: 3px;
+    width: 0%;
+    transition: width 0.1s;
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  /* Right sidebar */
+  .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+  /* System info */
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(26,37,64,0.6);
+    gap: 10px;
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-key { font-size: 0.6rem; color: var(--dim); letter-spacing: 2px; text-transform: uppercase; flex-shrink: 0; }
+  .info-val { font-size: 0.65rem; color: var(--text); text-align: right; word-break: break-word; }
+  .info-val.good { color: var(--accent); }
+  .info-val.warn { color: var(--accent3); }
+  .info-val.bad { color: var(--accent2); }
+
+  /* Live meters */
+  .meter-row { margin-bottom: 10px; }
+  .meter-header { display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--dim); margin-bottom: 4px; letter-spacing: 1.5px; }
+  .meter-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .meter-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+  .meter-fill.gpu { background: linear-gradient(90deg, #00f5c8, #0080ff); }
+  .meter-fill.cpu { background: linear-gradient(90deg, #f7c948, #ff4b6e); }
+  .meter-fill.ram { background: linear-gradient(90deg, #a855f7, #ec4899); }
+
+  /* Log */
+  #log {
+    font-size: 0.6rem;
+    line-height: 1.8;
+    color: var(--dim);
+    max-height: 180px;
+    overflow-y: auto;
+    letter-spacing: 1px;
+  }
+  #log::-webkit-scrollbar { width: 4px; }
+  #log::-webkit-scrollbar-thumb { background: var(--border); }
+  .log-ok { color: var(--accent); }
+  .log-warn { color: var(--accent3); }
+  .log-err { color: var(--accent2); }
+
+  /* CPU test display */
+  #cpu-result-area {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .cpu-card {
+    background: rgba(247,201,72,0.06);
+    border: 1px solid rgba(247,201,72,0.2);
+    border-radius: 3px;
+    padding: 12px;
+    text-align: center;
+  }
+  .cpu-card .val {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.2rem;
+    color: var(--accent3);
+  }
+  .cpu-card .lbl { font-size: 0.58rem; color: var(--dim); letter-spacing: 1.5px; margin-top: 3px; }
+
+  /* RAM test display */
+  #ram-result-area {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .ram-card {
+    background: rgba(168,85,247,0.07);
+    border: 1px solid rgba(168,85,247,0.25);
+    border-radius: 3px;
+    padding: 12px;
+    text-align: center;
+  }
+  .ram-card .val {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.2rem;
+    color: #a855f7;
+  }
+  .ram-card .lbl { font-size: 0.58rem; color: var(--dim); letter-spacing: 1.5px; margin-top: 3px; }
+
+  /* Tab sections */
+  .tab-section { display: none; }
+  .tab-section.active { display: block; }
+
+  /* Combo score */
+  #combo-section { margin-top: 14px; }
+  .combo-bars { display: flex; flex-direction: column; gap: 8px; }
+  .combo-row { display: flex; align-items: center; gap: 10px; }
+  .combo-name { font-size: 0.62rem; color: var(--dim); letter-spacing: 1.5px; width: 60px; flex-shrink: 0; }
+  .combo-bar { flex: 1; height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; }
+  .combo-fill { height: 100%; border-radius: 5px; }
+  .combo-score { font-family: 'Orbitron', sans-serif; font-size: 0.75rem; width: 50px; text-align: right; }
+
+  /* Animated status dot */
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--dim);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .status-dot.running {
+    background: var(--accent);
+    animation: blink 0.6s infinite;
+    box-shadow: 0 0 6px var(--accent);
+  }
+  .status-dot.done { background: var(--accent); }
+  .status-dot.error { background: var(--accent2); }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* Responsive */
+  @media(max-width:900px) {
+    main { grid-template-columns: 1fr; }
+    .sidebar { flex-direction: column; }
+  }
+
+  /* 3D Canvas info overlay */
+  #info-3d {
+    position: absolute;
+    top: 10px; left: 10px;
+    font-size: 0.6rem;
+    color: rgba(0,245,200,0.7);
+    letter-spacing: 1.5px;
+    pointer-events: none;
+  }
+
+  /* Flicker animation for logo */
+  @keyframes flicker {
+    0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.7} 94%{opacity:1} 96%{opacity:0.85} 97%{opacity:1}
+  }
+  .logo { animation: flicker 6s infinite; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">BENCH<span>CORE</span></div>
+    <div class="tagline">SYSTEM DIAGNOSTICS // GPU + CPU + RAM STRESS TEST</div>
+  </div>
+  <div id="fps-badge">
+    <div>
+      <div class="label">LIVE FPS</div>
+      <div id="fps-val">--</div>
+    </div>
+  </div>
+</header>
+
+<nav>
+  <button class="active" data-tab="gpu2d">⬡ 2D GPU TEST</button>
+  <button data-tab="gpu3d">◈ 3D GPU TEST</button>
+  <button data-tab="cpu">⚙ CPU TEST</button>
+  <button data-tab="ram">▩ RAM TEST</button>
+  <button data-tab="full">★ FULL SUITE</button>
+</nav>
+
+<main>
+  <div>
+
+    <!-- 2D GPU TEST -->
+    <div class="tab-section panel active" id="tab-gpu2d">
+      <div class="panel-title">
+        <span class="status-dot" id="dot-2d"></span>
+        2D GPU CANVAS BENCHMARK
+      </div>
+      <div id="canvas-wrap">
+        <canvas id="bench-canvas"></canvas>
+        <div id="canvas-overlay">
+          <h2>2D GPU BENCHMARK</h2>
+          <p>CANVAS PARTICLE + GEOMETRY STRESS TEST</p>
+        </div>
+        <div id="info-3d" style="display:none"></div>
+      </div>
+      <div class="controls">
+        <button class="btn btn-primary" id="btn-start-2d">▶ START 2D TEST</button>
+        <button class="btn btn-danger" id="btn-stop-2d" disabled>■ STOP</button>
+        <div class="slider-wrap">
+          INTENSITY: <input type="range" id="intensity-2d" min="1" max="5" value="3">
+          <span id="intensity-2d-val">3</span>
+        </div>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-label">TEST PROGRESS</div>
+        <div class="progress-bar"><div class="progress-fill" id="prog-2d"></div></div>
+      </div>
+      <div id="score-box">
+        <div class="score-label">BENCHMARK SCORE</div>
+        <div class="score-num" id="score-num">0</div>
+        <div class="score-grade" id="score-grade"></div>
+      </div>
+    </div>
+
+    <!-- 3D GPU TEST -->
+    <div class="tab-section panel" id="tab-gpu3d">
+      <div class="panel-title">
+        <span class="status-dot" id="dot-3d"></span>
+        3D WEBGL BENCHMARK
+      </div>
+      <div id="canvas-wrap-3d" style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border:1px solid var(--border);border-radius:2px;overflow:hidden;">
+        <canvas id="bench-canvas-3d" style="display:block;width:100%;height:100%;"></canvas>
+        <div id="canvas-overlay-3d" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(5,8,16,0.85);">
+          <h2 style="font-family:'Orbitron',sans-serif;font-size:1.1rem;letter-spacing:4px;color:var(--accent);">3D WEBGL BENCHMARK</h2>
+          <p style="font-size:0.7rem;color:var(--dim);letter-spacing:2px;">ROTATING GEOMETRY + PARTICLE FIELD</p>
+        </div>
+        <div id="info-3d-overlay" style="position:absolute;top:10px;left:10px;font-size:0.6rem;color:rgba(0,245,200,0.7);letter-spacing:1.5px;pointer-events:none;display:none;"></div>
+      </div>
+      <div class="controls">
+        <button class="btn btn-primary" id="btn-start-3d">▶ START 3D TEST</button>
+        <button class="btn btn-danger" id="btn-stop-3d" disabled>■ STOP</button>
+        <div class="slider-wrap">
+          OBJECTS: <input type="range" id="intensity-3d" min="1" max="5" value="3">
+          <span id="intensity-3d-val">3</span>
+        </div>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-label">TEST PROGRESS</div>
+        <div class="progress-bar"><div class="progress-fill" id="prog-3d"></div></div>
+      </div>
+      <div id="score-box-3d" style="margin-top:14px;padding:12px;background:rgba(0,245,200,0.05);border:1px solid var(--accent);border-radius:3px;display:none;text-align:center;">
+        <div style="font-size:0.65rem;letter-spacing:3px;color:var(--dim);">3D SCORE</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:2.2rem;color:var(--accent);text-shadow:var(--glow);" id="score-3d-num">0</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:1rem;margin-top:4px;" id="score-3d-grade"></div>
+      </div>
+    </div>
+
+    <!-- CPU TEST -->
+    <div class="tab-section panel" id="tab-cpu">
+      <div class="panel-title">
+        <span class="status-dot" id="dot-cpu"></span>
+        CPU STRESS BENCHMARK
+      </div>
+      <div style="font-size:0.68rem;color:var(--dim);line-height:2;letter-spacing:1px;margin-bottom:12px;">
+        Tests: <span style="color:var(--accent3)">Prime Sieve</span> · 
+        <span style="color:var(--accent3)">Fibonacci (Big Int)</span> · 
+        <span style="color:var(--accent3)">Matrix Multiply</span> · 
+        <span style="color:var(--accent3)">Sort Algorithms</span>
+      </div>
+      <div class="controls">
+        <button class="btn btn-warn" id="btn-start-cpu">▶ START CPU TEST</button>
+        <button class="btn btn-danger" id="btn-stop-cpu" disabled>■ STOP</button>
+        <div class="slider-wrap">
+          LOAD: <input type="range" id="intensity-cpu" min="1" max="5" value="3">
+          <span id="intensity-cpu-val">3</span>
+        </div>
+      </div>
+      <div class="progress-wrap" style="margin-top:12px;">
+        <div class="progress-label">CPU TEST PROGRESS</div>
+        <div class="progress-bar"><div class="progress-fill" style="background:linear-gradient(90deg,var(--accent3),var(--accent2));" id="prog-cpu"></div></div>
+      </div>
+      <div id="cpu-result-area">
+        <div class="cpu-card"><div class="val" id="cpu-primes">--</div><div class="lbl">PRIMES FOUND</div></div>
+        <div class="cpu-card"><div class="val" id="cpu-ops">--</div><div class="lbl">OPS/SEC (M)</div></div>
+        <div class="cpu-card"><div class="val" id="cpu-matrix">--</div><div class="lbl">MATRIX OPS</div></div>
+        <div class="cpu-card"><div class="val" id="cpu-sort">--</div><div class="lbl">SORT TIME (ms)</div></div>
+      </div>
+      <div id="score-box-cpu" style="margin-top:14px;padding:12px;background:rgba(247,201,72,0.05);border:1px solid var(--accent3);border-radius:3px;display:none;text-align:center;">
+        <div style="font-size:0.65rem;letter-spacing:3px;color:var(--dim);">CPU SCORE</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:2.2rem;color:var(--accent3);" id="score-cpu-num">0</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:1rem;margin-top:4px;" id="score-cpu-grade"></div>
+      </div>
+    </div>
+
+    <!-- RAM TEST -->
+    <div class="tab-section panel" id="tab-ram">
+      <div class="panel-title">
+        <span class="status-dot" id="dot-ram"></span>
+        RAM / MEMORY BENCHMARK
+      </div>
+      <div style="font-size:0.68rem;color:var(--dim);line-height:2;letter-spacing:1px;margin-bottom:12px;">
+        Tests: <span style="color:#a855f7">Sequential Write</span> · 
+        <span style="color:#a855f7">Sequential Read</span> · 
+        <span style="color:#a855f7">Random Access</span> · 
+        <span style="color:#a855f7">Allocation Speed</span>
+      </div>
+      <div class="controls">
+        <button class="btn" style="background:#a855f7;color:#fff;" id="btn-start-ram">▶ START RAM TEST</button>
+        <button class="btn btn-danger" id="btn-stop-ram" disabled>■ STOP</button>
+        <div class="slider-wrap">
+          SIZE: <input type="range" id="intensity-ram" min="1" max="5" value="3">
+          <span id="intensity-ram-val">3</span>
+        </div>
+      </div>
+      <div class="progress-wrap" style="margin-top:12px;">
+        <div class="progress-label">RAM TEST PROGRESS</div>
+        <div class="progress-bar"><div class="progress-fill" style="background:linear-gradient(90deg,#a855f7,#ec4899);" id="prog-ram"></div></div>
+      </div>
+      <div id="ram-result-area">
+        <div class="ram-card"><div class="val" id="ram-write">--</div><div class="lbl">WRITE (GB/s)</div></div>
+        <div class="ram-card"><div class="val" id="ram-read">--</div><div class="lbl">READ (GB/s)</div></div>
+        <div class="ram-card"><div class="val" id="ram-random">--</div><div class="lbl">RANDOM (ns)</div></div>
+        <div class="ram-card"><div class="val" id="ram-alloc">--</div><div class="lbl">ALLOC (ms)</div></div>
+      </div>
+      <div id="score-box-ram" style="margin-top:14px;padding:12px;background:rgba(168,85,247,0.05);border:1px solid #a855f7;border-radius:3px;display:none;text-align:center;">
+        <div style="font-size:0.65rem;letter-spacing:3px;color:var(--dim);">RAM SCORE</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:2.2rem;color:#a855f7;" id="score-ram-num">0</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:1rem;margin-top:4px;" id="score-ram-grade"></div>
+      </div>
+    </div>
+
+    <!-- FULL SUITE -->
+    <div class="tab-section panel" id="tab-full">
+      <div class="panel-title">★ FULL SYSTEM BENCHMARK SUITE</div>
+      <div style="font-size:0.68rem;color:var(--dim);margin-bottom:16px;line-height:2;letter-spacing:1px;">
+        Runs all tests sequentially and generates a combined score
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="btn btn-primary" id="btn-full" style="padding:14px 36px;font-size:0.8rem;">▶ RUN FULL SUITE</button>
+        <button class="btn btn-danger" id="btn-stop-full" disabled style="padding:14px 24px;font-size:0.8rem;">■ STOP</button>
+      </div>
+      <div class="progress-wrap" style="margin-top:14px;">
+        <div class="progress-label" id="full-stage">READY</div>
+        <div class="progress-bar"><div class="progress-fill" id="prog-full"></div></div>
+      </div>
+      <div id="combo-section" style="margin-top:20px;">
+        <div class="combo-bars">
+          <div class="combo-row">
+            <div class="combo-name">2D GPU</div>
+            <div class="combo-bar"><div class="combo-fill" style="background:linear-gradient(90deg,var(--accent),#0080ff);width:0%" id="bar-gpu2d"></div></div>
+            <div class="combo-score" style="color:var(--accent)" id="cs-gpu2d">--</div>
+          </div>
+          <div class="combo-row">
+            <div class="combo-name">3D GPU</div>
+            <div class="combo-bar"><div class="combo-fill" style="background:linear-gradient(90deg,#00c8ff,#0040ff);width:0%" id="bar-gpu3d"></div></div>
+            <div class="combo-score" style="color:#00c8ff" id="cs-gpu3d">--</div>
+          </div>
+          <div class="combo-row">
+            <div class="combo-name">CPU</div>
+            <div class="combo-bar"><div class="combo-fill" style="background:linear-gradient(90deg,var(--accent3),var(--accent2));width:0%" id="bar-cpu"></div></div>
+            <div class="combo-score" style="color:var(--accent3)" id="cs-cpu">--</div>
+          </div>
+          <div class="combo-row">
+            <div class="combo-name">RAM</div>
+            <div class="combo-bar"><div class="combo-fill" style="background:linear-gradient(90deg,#a855f7,#ec4899);width:0%" id="bar-ram"></div></div>
+            <div class="combo-score" style="color:#a855f7" id="cs-ram">--</div>
+          </div>
+        </div>
+        <div id="total-score-box" style="display:none;margin-top:20px;padding:20px;background:linear-gradient(135deg,rgba(0,245,200,0.06),rgba(168,85,247,0.06));border:1px solid var(--accent);border-radius:4px;text-align:center;">
+          <div style="font-size:0.6rem;letter-spacing:4px;color:var(--dim);">TOTAL BENCHCORE SCORE</div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:3.5rem;color:var(--accent);text-shadow:var(--glow);margin:8px 0;" id="total-score-num">0</div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:1.3rem;" id="total-grade"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- System Info -->
+    <div class="panel">
+      <div class="panel-title">SYSTEM INFO</div>
+      <div id="sysinfo">
+        <div class="info-row"><span class="info-key">BROWSER</span><span class="info-val" id="si-browser">--</span></div>
+        <div class="info-row"><span class="info-key">PLATFORM</span><span class="info-val" id="si-platform">--</span></div>
+        <div class="info-row"><span class="info-key">CORES</span><span class="info-val" id="si-cores">--</span></div>
+        <div class="info-row"><span class="info-key">MEMORY</span><span class="info-val" id="si-memory">--</span></div>
+        <div class="info-row"><span class="info-key">GPU</span><span class="info-val" id="si-gpu">--</span></div>
+        <div class="info-row"><span class="info-key">WEBGL VER</span><span class="info-val" id="si-webgl">--</span></div>
+        <div class="info-row"><span class="info-key">RESOLUTION</span><span class="info-val" id="si-res">--</span></div>
+        <div class="info-row"><span class="info-key">PIXEL RATIO</span><span class="info-val" id="si-dpr">--</span></div>
+        <div class="info-row"><span class="info-key">TOUCH</span><span class="info-val" id="si-touch">--</span></div>
+        <div class="info-row"><span class="info-key">ONLINE</span><span class="info-val" id="si-online">--</span></div>
+      </div>
+    </div>
+
+    <!-- Live Meters -->
+    <div class="panel">
+      <div class="panel-title">LIVE METRICS</div>
+      <div class="meter-row">
+        <div class="meter-header"><span>GPU LOAD (EST)</span><span id="m-gpu">0%</span></div>
+        <div class="meter-bar"><div class="meter-fill gpu" id="mf-gpu" style="width:0%"></div></div>
+      </div>
+      <div class="meter-row">
+        <div class="meter-header"><span>CPU LOAD (EST)</span><span id="m-cpu">0%</span></div>
+        <div class="meter-bar"><div class="meter-fill cpu" id="mf-cpu" style="width:0%"></div></div>
+      </div>
+      <div class="meter-row">
+        <div class="meter-header"><span>RAM USAGE (EST)</span><span id="m-ram">0%</span></div>
+        <div class="meter-bar"><div class="meter-fill ram" id="mf-ram" style="width:0%"></div></div>
+      </div>
+      <div style="margin-top:10px;font-size:0.58rem;color:var(--dim);letter-spacing:1px;line-height:1.8;">
+        * Estimates based on frame timing & JS heap
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="panel">
+      <div class="panel-title">DIAGNOSTIC LOG</div>
+      <div id="log">
+        <div class="log-ok">[INIT] BENCHCORE system ready</div>
+        <div>[SYS] Detecting hardware...</div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+// =========================================================
+// UTILITIES
+// =========================================================
+const $ = id => document.getElementById(id);
+const log = (msg, type='') => {
+  const el = $('log');
+  const d = document.createElement('div');
+  const time = new Date().toLocaleTimeString('en-GB', {hour12:false});
+  d.textContent = `[${time}] ${msg}`;
+  d.className = type;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+  if(el.children.length > 50) el.removeChild(el.children[0]);
+};
+
+const grade = (score, thresholds, labels) => {
+  for(let i = thresholds.length-1; i >= 0; i--) {
+    if(score >= thresholds[i]) return labels[i];
+  }
+  return labels[0];
+};
+
+const gpu2dGrades = [0,2000,5000,10000,18000];
+const gpu2dLabels = ['<span style="color:#ff4b6e">◈ LOW-END</span>','<span style="color:#f7c948">◈ ENTRY</span>','<span style="color:#00c8ff">◈ MID-RANGE</span>','<span style="color:#00f5c8">◈ HIGH-END</span>','<span style="color:#ffffff;text-shadow:0 0 20px #fff">★ EXTREME</span>'];
+
+// =========================================================
+// FPS COUNTER
+// =========================================================
+let fpsFrames=0, fpsSec=0, globalFPS=0;
+let lastFpsTime=performance.now();
+function updateFPS(now) {
+  fpsFrames++;
+  if(now - lastFpsTime >= 1000) {
+    globalFPS = fpsFrames;
+    fpsFrames = 0;
+    lastFpsTime = now;
+    $('fps-val').textContent = globalFPS;
+    // Update live meters
+    const gpuLoad = Math.min(100, Math.round((1 - globalFPS/144)*100 + Math.random()*5));
+    const cpuEst = Math.min(100, Math.round(gpuLoad * 0.6 + Math.random()*10));
+    let ramEst = 0;
+    try { if(performance.memory) ramEst = Math.round((performance.memory.usedJSHeapSize/performance.memory.jsHeapSizeLimit)*100); } catch(e){}
+    if(isAnyRunning) {
+      $('mf-gpu').style.width = gpuLoad+'%'; $('m-gpu').textContent = gpuLoad+'%';
+      $('mf-cpu').style.width = cpuEst+'%'; $('m-cpu').textContent = cpuEst+'%';
+      $('mf-ram').style.width = ramEst+'%'; $('m-ram').textContent = ramEst+'%';
+    }
+  }
+  requestAnimationFrame(updateFPS);
+}
+requestAnimationFrame(updateFPS);
+
+// =========================================================
+// SYSTEM INFO
+// =========================================================
+(function detectSystem(){
+  const nav = navigator;
+  const ua = nav.userAgent;
+  let browser = 'Unknown';
+  if(ua.includes('Firefox')) browser='Firefox';
+  else if(ua.includes('Edg/')) browser='Edge';
+  else if(ua.includes('Chrome')) browser='Chrome';
+  else if(ua.includes('Safari')) browser='Safari';
+  $('si-browser').textContent = browser;
+  $('si-platform').textContent = nav.platform || 'Unknown';
+  const cores = nav.hardwareConcurrency || '?';
+  $('si-cores').textContent = cores + ' threads';
+  $('si-cores').className = 'info-val ' + (cores >= 8 ? 'good' : cores >= 4 ? 'warn' : 'bad');
+  const mem = nav.deviceMemory;
+  $('si-memory').textContent = mem ? mem + ' GB (approx)' : 'Unknown';
+  if(mem) $('si-memory').className = 'info-val ' + (mem >= 8 ? 'good' : mem >= 4 ? 'warn' : 'bad');
+  $('si-res').textContent = screen.width + '×' + screen.height;
+  $('si-dpr').textContent = window.devicePixelRatio || '1';
+  $('si-touch').textContent = ('ontouchstart' in window) ? 'YES' : 'NO';
+  $('si-online').textContent = navigator.onLine ? 'YES' : 'NO';
+
+  // GPU via WebGL
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl');
+    if(gl) {
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      if(dbg) {
+        const gpu = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+        $('si-gpu').textContent = gpu.length > 30 ? gpu.substring(0,28)+'...' : gpu;
+      } else {
+        $('si-gpu').textContent = 'Hidden by browser';
+      }
+      $('si-webgl').textContent = gl instanceof WebGL2RenderingContext ? 'WebGL 2.0' : 'WebGL 1.0';
+    }
+  } catch(e){ $('si-gpu').textContent = 'Not available'; }
+
+  log(`[SYS] CPU Cores: ${cores}, RAM: ${mem||'?'}GB`, 'log-ok');
+  log(`[SYS] Resolution: ${screen.width}×${screen.height} @ ${window.devicePixelRatio}x`);
+})();
+
+// =========================================================
+// TAB SWITCHING
+// =========================================================
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-section').forEach(s=>s.classList.remove('active'));
+    btn.classList.add('active');
+    $('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+// =========================================================
+// 2D GPU BENCHMARK
+// =========================================================
+let canvas2d, ctx2d, raf2d=null, test2dRunning=false, test2dStartTime=0;
+let particles2d=[], test2dDuration=10000, test2dFPSSum=0, test2dFPSCount=0;
+let isAnyRunning=false;
+
+function init2DCanvas() {
+  canvas2d = $('bench-canvas');
+  const wrap = document.getElementById('canvas-wrap');
+  canvas2d.width = wrap.clientWidth;
+  canvas2d.height = wrap.clientHeight;
+  ctx2d = canvas2d.getContext('2d');
+}
+
+function spawnParticles2D(count) {
+  particles2d = [];
+  const W=canvas2d.width, H=canvas2d.height;
+  for(let i=0;i<count;i++){
+    particles2d.push({
+      x: Math.random()*W, y: Math.random()*H,
+      vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4,
+      r: Math.random()*3+1,
+      hue: Math.random()*360,
+      trail: []
+    });
+  }
+}
+
+function draw2DFrame(timestamp) {
+  if(!test2dRunning) return;
+  const W=canvas2d.width, H=canvas2d.height;
+  const elapsed = timestamp - test2dStartTime;
+  const progress = Math.min(elapsed/test2dDuration, 1);
+  $('prog-2d').style.width = (progress*100)+'%';
+
+  if(progress >= 1) {
+    stopTest2D(true);
+    return;
+  }
+
+  // Background with trail
+  ctx2d.fillStyle = 'rgba(5,8,16,0.18)';
+  ctx2d.fillRect(0,0,W,H);
+
+  // Grid
+  ctx2d.strokeStyle = 'rgba(0,245,200,0.05)';
+  ctx2d.lineWidth=1;
+  for(let x=0;x<W;x+=40){ctx2d.beginPath();ctx2d.moveTo(x,0);ctx2d.lineTo(x,H);ctx2d.stroke();}
+  for(let y=0;y<H;y+=40){ctx2d.beginPath();ctx2d.moveTo(0,y);ctx2d.lineTo(W,y);ctx2d.stroke();}
+
+  // Particles
+  particles2d.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    if(p.x<0||p.x>W) p.vx*=-1;
+    if(p.y<0||p.y>H) p.vy*=-1;
+    p.hue = (p.hue+1)%360;
+
+    // Glow
+    const grd = ctx2d.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r*4);
+    grd.addColorStop(0, `hsla(${p.hue},100%,70%,0.9)`);
+    grd.addColorStop(1, `hsla(${p.hue},100%,50%,0)`);
+    ctx2d.beginPath();
+    ctx2d.arc(p.x,p.y,p.r*4,0,Math.PI*2);
+    ctx2d.fillStyle=grd;
+    ctx2d.fill();
+
+    // Core
+    ctx2d.beginPath();
+    ctx2d.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx2d.fillStyle=`hsl(${p.hue},100%,80%)`;
+    ctx2d.fill();
+  });
+
+  // Connections
+  const maxDist=80;
+  for(let i=0;i<Math.min(particles2d.length,50);i++){
+    for(let j=i+1;j<Math.min(particles2d.length,50);j++){
+      const dx=particles2d[i].x-particles2d[j].x;
+      const dy=particles2d[i].y-particles2d[j].y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<maxDist){
+        ctx2d.strokeStyle=`rgba(0,245,200,${(1-d/maxDist)*0.4})`;
+        ctx2d.lineWidth=0.5;
+        ctx2d.beginPath();
+        ctx2d.moveTo(particles2d[i].x,particles2d[i].y);
+        ctx2d.lineTo(particles2d[j].x,particles2d[j].y);
+        ctx2d.stroke();
+      }
+    }
+  }
+
+  // Rotating shapes
+  const cx=W/2, cy=H/2;
+  const t=timestamp*0.001;
+  for(let s=0;s<5;s++){
+    ctx2d.save();
+    ctx2d.translate(cx,cy);
+    ctx2d.rotate(t*(s%2===0?1:-1)*0.3*(s+1)*0.3);
+    ctx2d.strokeStyle=`hsla(${(t*50+s*60)%360},100%,60%,0.3)`;
+    ctx2d.lineWidth=1.5;
+    const sides=3+s;
+    ctx2d.beginPath();
+    for(let i2=0;i2<sides;i2++){
+      const a=i2/sides*Math.PI*2-Math.PI/2;
+      const r2=(60+s*35);
+      i2===0?ctx2d.moveTo(Math.cos(a)*r2,Math.sin(a)*r2):ctx2d.lineTo(Math.cos(a)*r2,Math.sin(a)*r2);
+    }
+    ctx2d.closePath();
+    ctx2d.stroke();
+    ctx2d.restore();
+  }
+
+  // FPS tracking
+  test2dFPSSum += globalFPS;
+  test2dFPSCount++;
+
+  // HUD
+  ctx2d.fillStyle='rgba(0,245,200,0.8)';
+  ctx2d.font='11px Share Tech Mono';
+  ctx2d.fillText(`FPS: ${globalFPS} | PARTICLES: ${particles2d.length} | ${Math.round(progress*100)}%`, 12, 18);
+
+  raf2d = requestAnimationFrame(draw2DFrame);
+}
+
+function stopTest2D(completed=false) {
+  test2dRunning=false; isAnyRunning=false;
+  if(raf2d){cancelAnimationFrame(raf2d);raf2d=null;}
+  $('btn-start-2d').disabled=false;
+  $('btn-stop-2d').disabled=true;
+  $('dot-2d').className='status-dot '+(completed?'done':'');
+  if(completed) {
+    const avgFPS = test2dFPSCount>0 ? test2dFPSSum/test2dFPSCount : 0;
+    const intensity = parseInt($('intensity-2d').value);
+    const score = Math.round(avgFPS * particles2d.length * intensity / 10);
+    $('score-num').textContent = score.toLocaleString();
+    $('score-grade').innerHTML = grade(score, gpu2dGrades, gpu2dLabels);
+    $('score-box').style.display='block';
+    log(`[2D] Score: ${score.toLocaleString()} | Avg FPS: ${Math.round(avgFPS)}`, 'log-ok');
+    // Store for combo
+    window._score2d = score;
+    $('prog-2d').style.width='100%';
+  } else {
+    log(`[2D] Test stopped`, 'log-warn');
+  }
+  $('mf-gpu').style.width='0%';$('m-gpu').textContent='0%';
+  $('mf-cpu').style.width='0%';$('m-cpu').textContent='0%';
+}
+
+$('btn-start-2d').addEventListener('click', () => {
+  init2DCanvas();
+  const intensity = parseInt($('intensity-2d').value);
+  const counts = [500,1000,2000,3500,5000];
+  spawnParticles2D(counts[intensity-1]);
+  test2dRunning=true; isAnyRunning=true;
+  test2dStartTime=performance.now();
+  test2dFPSSum=0; test2dFPSCount=0;
+  $('btn-start-2d').disabled=true;
+  $('btn-stop-2d').disabled=false;
+  $('score-box').style.display='none';
+  $('canvas-overlay').style.opacity='0';
+  $('canvas-overlay').style.pointerEvents='none';
+  $('dot-2d').className='status-dot running';
+  log(`[2D] Started — ${counts[intensity-1]} particles`,'log-ok');
+  raf2d=requestAnimationFrame(draw2DFrame);
+});
+$('btn-stop-2d').addEventListener('click', () => stopTest2D(false));
+$('intensity-2d').addEventListener('input', function(){$('intensity-2d-val').textContent=this.value;});
+
+// =========================================================
+// 3D WEBGL BENCHMARK
+// =========================================================
+let gl3d=null, raf3d=null, test3dRunning=false, test3dStartTime=0;
+let test3dFPSSum=0, test3dFPSCount=0;
+let prog3d=null, geom3d={};
+
+function init3DCanvas(){
+  const canvas = $('bench-canvas-3d');
+  const wrap = $('canvas-wrap-3d');
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  gl3d = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if(!gl3d){log('[3D] WebGL not supported','log-err');return false;}
+
+  const vsrc = `
+    attribute vec3 a_pos;
+    attribute vec3 a_col;
+    uniform mat4 u_mvp;
+    varying vec3 v_col;
+    void main(){
+      gl_Position = u_mvp * vec4(a_pos, 1.0);
+      gl_PointSize = 3.0;
+      v_col = a_col;
+    }`;
+  const fsrc = `
+    precision mediump float;
+    varying vec3 v_col;
+    void main(){
+      gl_FragColor = vec4(v_col, 1.0);
+    }`;
+
+  const vs = gl3d.createShader(gl3d.VERTEX_SHADER);
+  gl3d.shaderSource(vs, vsrc); gl3d.compileShader(vs);
+  const fs = gl3d.createShader(gl3d.FRAGMENT_SHADER);
+  gl3d.shaderSource(fs, fsrc); gl3d.compileShader(fs);
+  prog3d = gl3d.createProgram();
+  gl3d.attachShader(prog3d,vs); gl3d.attachShader(prog3d,fs);
+  gl3d.linkProgram(prog3d); gl3d.useProgram(prog3d);
+
+  return true;
+}
+
+function buildGeometry3D(intensity){
+  if(!gl3d) return;
+  const counts=[500,1500,3000,6000,12000];
+  const n = counts[intensity-1];
+  const verts=[], cols=[];
+
+  // Particles in sphere
+  for(let i=0;i<n;i++){
+    const theta=Math.random()*Math.PI*2, phi=Math.acos(2*Math.random()-1);
+    const r=0.5+Math.random()*1.5;
+    verts.push(r*Math.sin(phi)*Math.cos(theta), r*Math.sin(phi)*Math.sin(theta), r*Math.cos(phi));
+    const h=Math.random();
+    cols.push(h<0.33?0:h<0.66?1-h:h, h<0.33?h:h<0.66?0:1-h, h>0.66?h:0.2);
+  }
+
+  // Cube wireframe
+  const cube=[
+    -1,-1,-1, 1,-1,-1,  1,-1,-1, 1,1,-1,  1,1,-1,-1,1,-1,  -1,1,-1,-1,-1,-1,
+    -1,-1,1,  1,-1,1,   1,-1,1,  1,1,1,   1,1,1,-1,1,1,    -1,1,1,-1,-1,1,
+    -1,-1,-1,-1,-1,1,   1,-1,-1,1,-1,1,   1,1,-1,1,1,1,    -1,1,-1,-1,1,1
+  ];
+  for(let i=0;i<cube.length;i+=3){
+    verts.push(cube[i],cube[i+1],cube[i+2]);
+    cols.push(0,1,0.8);
+  }
+
+  const buf=gl3d.createBuffer();
+  gl3d.bindBuffer(gl3d.ARRAY_BUFFER,buf);
+  gl3d.bufferData(gl3d.ARRAY_BUFFER,new Float32Array([...verts,...cols]),gl3d.STATIC_DRAW);
+
+  geom3d={buf,nVerts:verts.length/3,nParticles:n};
+}
+
+function mat4mul(a,b){
+  const r=new Float32Array(16);
+  for(let i=0;i<4;i++)for(let j=0;j<4;j++)for(let k=0;k<4;k++)r[i*4+j]+=a[i*4+k]*b[k*4+j];
+  return r;
+}
+function perspective(fov,asp,near,far){
+  const f=1/Math.tan(fov/2),r=new Float32Array(16);
+  r[0]=f/asp;r[5]=f;r[10]=(far+near)/(near-far);r[11]=-1;r[14]=(2*far*near)/(near-far);
+  return r;
+}
+function rotY(t){const c=Math.cos(t),s=Math.sin(t),r=new Float32Array(16);r[0]=c;r[2]=s;r[5]=1;r[8]=-s;r[10]=c;r[15]=1;return r;}
+function rotX(t){const c=Math.cos(t),s=Math.sin(t),r=new Float32Array(16);r[0]=1;r[5]=c;r[6]=-s;r[9]=s;r[10]=c;r[15]=1;return r;}
+function translate(x,y,z){const r=new Float32Array(16);r[0]=1;r[5]=1;r[10]=1;r[14]=x;r[13]=y;r[12]=0;r[15]=1;r[12]=x;r[13]=y;r[14]=z;return r;}
+
+function draw3DFrame(timestamp){
+  if(!test3dRunning||!gl3d) return;
+  const canvas=$('bench-canvas-3d');
+  const W=canvas.width, H=canvas.height;
+  const elapsed=timestamp-test3dStartTime;
+  const progress=Math.min(elapsed/15000,1);
+  $('prog-3d').style.width=(progress*100)+'%';
+  if(progress>=1){stop3D(true);return;}
+
+  gl3d.viewport(0,0,W,H);
+  gl3d.clearColor(0.02,0.03,0.08,1);
+  gl3d.clear(gl3d.COLOR_BUFFER_BIT|gl3d.DEPTH_BUFFER_BIT);
+  gl3d.enable(gl3d.DEPTH_TEST);
+
+  const t=timestamp*0.001;
+  const proj=perspective(Math.PI/4,W/H,0.1,100);
+  const view=translate(0,0,-5);
+  const rot=mat4mul(rotY(t*0.5),rotX(t*0.3));
+  const mvp=mat4mul(proj,mat4mul(view,rot));
+
+  gl3d.useProgram(prog3d);
+  gl3d.bindBuffer(gl3d.ARRAY_BUFFER,geom3d.buf);
+  const stride=0, nV=geom3d.nVerts;
+  const posLoc=gl3d.getAttribLocation(prog3d,'a_pos');
+  const colLoc=gl3d.getAttribLocation(prog3d,'a_col');
+  gl3d.enableVertexAttribArray(posLoc);
+  gl3d.enableVertexAttribArray(colLoc);
+  gl3d.vertexAttribPointer(posLoc,3,gl3d.FLOAT,false,0,0);
+  gl3d.vertexAttribPointer(colLoc,3,gl3d.FLOAT,false,0,nV*12);
+  const mvpLoc=gl3d.getUniformLocation(prog3d,'u_mvp');
+  gl3d.uniformMatrix4fv(mvpLoc,false,mvp);
+
+  // Draw particles
+  gl3d.drawArrays(gl3d.POINTS,0,geom3d.nParticles);
+  // Draw cube lines
+  gl3d.drawArrays(gl3d.LINES,geom3d.nParticles,nV-geom3d.nParticles);
+
+  test3dFPSSum+=globalFPS; test3dFPSCount++;
+  $('info-3d-overlay').textContent=`FPS: ${globalFPS} | VERTS: ${nV.toLocaleString()} | ${Math.round(progress*100)}%`;
+
+  raf3d=requestAnimationFrame(draw3DFrame);
+}
+
+function stop3D(completed=false){
+  test3dRunning=false; isAnyRunning=false;
+  if(raf3d){cancelAnimationFrame(raf3d);raf3d=null;}
+  $('btn-start-3d').disabled=false; $('btn-stop-3d').disabled=true;
+  $('dot-3d').className='status-dot '+(completed?'done':'');
+  if(completed){
+    const avg=test3dFPSCount>0?test3dFPSSum/test3dFPSCount:0;
+    const score=Math.round(avg*geom3d.nVerts/50);
+    $('score-3d-num').textContent=score.toLocaleString();
+    $('score-3d-grade').innerHTML=grade(score,gpu2dGrades,gpu2dLabels);
+    $('score-box-3d').style.display='block';
+    log(`[3D] Score: ${score.toLocaleString()} | Avg FPS: ${Math.round(avg)}`,'log-ok');
+    window._score3d=score;
+    $('prog-3d').style.width='100%';
+  } else log('[3D] Test stopped','log-warn');
+  $('mf-gpu').style.width='0%';$('m-gpu').textContent='0%';
+}
+
+$('btn-start-3d').addEventListener('click',()=>{
+  if(!init3DCanvas()){log('[3D] Init failed','log-err');return;}
+  const intensity=parseInt($('intensity-3d').value);
+  buildGeometry3D(intensity);
+  test3dRunning=true; isAnyRunning=true;
+  test3dStartTime=performance.now();
+  test3dFPSSum=0; test3dFPSCount=0;
+  $('btn-start-3d').disabled=true; $('btn-stop-3d').disabled=false;
+  $('score-box-3d').style.display='none';
+  $('canvas-overlay-3d').style.opacity='0'; $('canvas-overlay-3d').style.pointerEvents='none';
+  $('info-3d-overlay').style.display='block';
+  $('dot-3d').className='status-dot running';
+  log(`[3D] Started — ${geom3d.nVerts.toLocaleString()} vertices`,'log-ok');
+  raf3d=requestAnimationFrame(draw3DFrame);
+});
+$('btn-stop-3d').addEventListener('click',()=>stop3D(false));
+$('intensity-3d').addEventListener('input',function(){$('intensity-3d-val').textContent=this.value;});
+
+// =========================================================
+// CPU BENCHMARK
+// =========================================================
+let cpuRunning=false;
+
+async function runCPUTest(intensity){
+  cpuRunning=true; isAnyRunning=true;
+  $('dot-cpu').className='status-dot running';
+  $('btn-start-cpu').disabled=true; $('btn-stop-cpu').disabled=false;
+  $('score-box-cpu').style.display='none';
+  log('[CPU] Starting benchmark...','log-ok');
+
+  const limits=[50000,100000,200000,500000,1000000];
+  const limit=limits[intensity-1];
+
+  // Yield helper
+  const yld=()=>new Promise(r=>setTimeout(r,0));
+
+  // Test 1: Prime sieve
+  $('prog-cpu').style.width='10%';
+  log('[CPU] Test 1/4: Sieve of Eratosthenes...');
+  await yld(); if(!cpuRunning) return;
+  let t0=performance.now();
+  const sieve=new Uint8Array(limit); sieve.fill(1);
+  sieve[0]=sieve[1]=0;
+  for(let i=2;i*i<limit;i++) if(sieve[i]) for(let j=i*i;j<limit;j+=i) sieve[j]=0;
+  const primes=sieve.reduce((s,v)=>s+v,0);
+  const t1=performance.now()-t0;
+  $('cpu-primes').textContent=primes.toLocaleString();
+  log(`[CPU] Primes: ${primes.toLocaleString()} in ${Math.round(t1)}ms`,'log-ok');
+  $('prog-cpu').style.width='35%'; await yld(); if(!cpuRunning) return;
+
+  // Test 2: Float ops/sec
+  log('[CPU] Test 2/4: Float operations...');
+  t0=performance.now();
+  let acc=0, iters=0;
+  while(performance.now()-t0<800){
+    for(let i=0;i<10000;i++) acc+=Math.sin(i)*Math.cos(i)*Math.sqrt(i+1);
+    iters+=10000;
+  }
+  const opsMs=iters/(performance.now()-t0);
+  $('cpu-ops').textContent=(opsMs/1000).toFixed(2);
+  log(`[CPU] ${(opsMs*1000).toLocaleString()} ops/s`,'log-ok');
+  $('prog-cpu').style.width='60%'; await yld(); if(!cpuRunning) return;
+
+  // Test 3: Matrix multiply
+  log('[CPU] Test 3/4: 64×64 matrix multiply...');
+  const N=64, A=[], B=[], C=[];
+  for(let i=0;i<N;i++){A[i]=[];B[i]=[];C[i]=new Float64Array(N);for(let j=0;j<N;j++){A[i][j]=Math.random();B[i][j]=Math.random();}}
+  t0=performance.now();
+  let matOps=0;
+  while(performance.now()-t0<600){
+    for(let i=0;i<N;i++) for(let j=0;j<N;j++){let s=0;for(let k=0;k<N;k++) s+=A[i][k]*B[k][j];C[i][j]=s;}
+    matOps++;
+  }
+  $('cpu-matrix').textContent=matOps.toLocaleString();
+  log(`[CPU] Matrix ops: ${matOps}`,'log-ok');
+  $('prog-cpu').style.width='80%'; await yld(); if(!cpuRunning) return;
+
+  // Test 4: Sort
+  log('[CPU] Test 4/4: Array sort...');
+  const arr=new Float64Array(limit/5);
+  for(let i=0;i<arr.length;i++) arr[i]=Math.random();
+  t0=performance.now();
+  const sorted=[...arr].sort((a,b)=>a-b);
+  const sortTime=Math.round(performance.now()-t0);
+  $('cpu-sort').textContent=sortTime;
+  log(`[CPU] Sort ${arr.length.toLocaleString()} items in ${sortTime}ms`,'log-ok');
+  $('prog-cpu').style.width='100%';
+
+  const score=Math.round(primes/100+opsMs*5+matOps*200-sortTime*0.5);
+  $('score-cpu-num').textContent=score.toLocaleString();
+  $('score-cpu-grade').innerHTML=grade(score,[0,1000,3000,7000,15000],gpu2dLabels);
+  $('score-box-cpu').style.display='block';
+  window._scoreCPU=score;
+  log(`[CPU] Score: ${score.toLocaleString()}`,'log-ok');
+  cpuRunning=false; isAnyRunning=false;
+  $('dot-cpu').className='status-dot done';
+  $('btn-start-cpu').disabled=false; $('btn-stop-cpu').disabled=true;
+}
+
+$('btn-start-cpu').addEventListener('click',()=>{
+  const intensity=parseInt($('intensity-cpu').value);
+  runCPUTest(intensity);
+});
+$('btn-stop-cpu').addEventListener('click',()=>{
+  cpuRunning=false; isAnyRunning=false;
+  $('btn-start-cpu').disabled=false; $('btn-stop-cpu').disabled=true;
+  $('dot-cpu').className='status-dot';
+  log('[CPU] Test stopped','log-warn');
+});
+$('intensity-cpu').addEventListener('input',function(){$('intensity-cpu-val').textContent=this.value;});
+
+// =========================================================
+// RAM BENCHMARK
+// =========================================================
+let ramRunning=false;
+
+async function runRAMTest(intensity){
+  ramRunning=true; isAnyRunning=true;
+  $('dot-ram').className='status-dot running';
+  $('btn-start-ram').disabled=true; $('btn-stop-ram').disabled=false;
+  $('score-box-ram').style.display='none';
+  log('[RAM] Starting benchmark...','log-ok');
+
+  const sizes=[1,4,8,16,32]; // MB
+  const sizeMB=sizes[intensity-1];
+  const n=sizeMB*1024*1024/8; // float64 count
+
+  const yld=()=>new Promise(r=>setTimeout(r,0));
+
+  // Test 1: Allocation speed
+  $('prog-ram').style.width='15%';
+  log(`[RAM] Allocating ${sizeMB}MB...`);
+  await yld(); if(!ramRunning) return;
+  let t0=performance.now();
+  const buf=new Float64Array(n);
+  const allocTime=Math.round(performance.now()-t0);
+  $('ram-alloc').textContent=allocTime;
+  log(`[RAM] Alloc ${sizeMB}MB in ${allocTime}ms`,'log-ok');
+  $('prog-ram').style.width='35%'; await yld(); if(!ramRunning) return;
+
+  // Test 2: Sequential Write
+  log('[RAM] Sequential write...');
+  t0=performance.now();
+  for(let i=0;i<n;i++) buf[i]=i*0.001;
+  const wTime=performance.now()-t0;
+  const wBW=((n*8)/(1024**3))/(wTime/1000);
+  $('ram-write').textContent=wBW.toFixed(2);
+  log(`[RAM] Write: ${wBW.toFixed(2)} GB/s`,'log-ok');
+  $('prog-ram').style.width='60%'; await yld(); if(!ramRunning) return;
+
+  // Test 3: Sequential Read
+  log('[RAM] Sequential read...');
+  t0=performance.now();
+  let sum=0;
+  for(let i=0;i<n;i++) sum+=buf[i];
+  const rTime=performance.now()-t0;
+  const rBW=((n*8)/(1024**3))/(rTime/1000);
+  $('ram-read').textContent=rBW.toFixed(2);
+  log(`[RAM] Read: ${rBW.toFixed(2)} GB/s`,'log-ok');
+  $('prog-ram').style.width='80%'; await yld(); if(!ramRunning) return;
+
+  // Test 4: Random access latency
+  log('[RAM] Random access latency...');
+  const iters=10000;
+  const indices=new Uint32Array(iters);
+  for(let i=0;i<iters;i++) indices[i]=Math.floor(Math.random()*n);
+  t0=performance.now();
+  let acc=0;
+  for(let i=0;i<iters;i++) acc+=buf[indices[i]];
+  const randTime=((performance.now()-t0)/iters)*1000000; // nanoseconds per op
+  $('ram-random').textContent=randTime.toFixed(1);
+  log(`[RAM] Random latency: ${randTime.toFixed(1)}ns`,'log-ok');
+  $('prog-ram').style.width='100%';
+
+  const score=Math.round((wBW+rBW)*500-randTime*2-allocTime);
+  $('score-ram-num').textContent=Math.max(0,score).toLocaleString();
+  $('score-ram-grade').innerHTML=grade(score,[0,500,1500,3000,6000],gpu2dLabels);
+  $('score-box-ram').style.display='block';
+  window._scoreRAM=Math.max(0,score);
+  log(`[RAM] Score: ${Math.max(0,score).toLocaleString()}`,'log-ok');
+  ramRunning=false; isAnyRunning=false;
+  $('dot-ram').className='status-dot done';
+  $('btn-start-ram').disabled=false; $('btn-stop-ram').disabled=true;
+}
+
+$('btn-start-ram').addEventListener('click',()=>{
+  const intensity=parseInt($('intensity-ram').value);
+  runRAMTest(intensity);
+});
+$('btn-stop-ram').addEventListener('click',()=>{
+  ramRunning=false; isAnyRunning=false;
+  $('btn-start-ram').disabled=false; $('btn-stop-ram').disabled=true;
+  $('dot-ram').className='status-dot';
+  log('[RAM] Test stopped','log-warn');
+});
+$('intensity-ram').addEventListener('input',function(){$('intensity-ram-val').textContent=this.value;});
+
+// =========================================================
+// FULL SUITE
+// =========================================================
+let fullSuiteRunning = false;
+
+$('btn-full').addEventListener('click', async () => {
+  if(fullSuiteRunning) return;
+  fullSuiteRunning = true;
+  isAnyRunning = true;
+  $('btn-full').disabled = true;
+  $('btn-stop-full').disabled = false;
+  $('total-score-box').style.display = 'none';
+  // Reset combo bars
+  ['gpu2d','gpu3d','cpu','ram'].forEach(k=>{
+    $('bar-'+k).style.width='0%';
+    $('cs-'+k).textContent='--';
+  });
+  log('[SUITE] === FULL BENCHMARK STARTED ===','log-ok');
+
+  const setStage = (txt,pct) => {
+    $('full-stage').textContent = txt;
+    $('prog-full').style.width = pct+'%';
+  };
+
+  const checkStop = () => !fullSuiteRunning;
+
+  // --- Helper: ensure canvas has real dimensions even when tab is hidden ---
+  function ensureCanvasSize(canvas, wrap, fallbackW, fallbackH) {
+    const w = wrap.clientWidth || fallbackW;
+    const h = wrap.clientHeight || fallbackH;
+    canvas.width = w;
+    canvas.height = h;
+  }
+
+  // ---- STAGE 1: 2D GPU ----
+  setStage('STAGE 1/4 — 2D GPU', 0);
+  log('[SUITE] Running 2D GPU test...');
+  await new Promise(res => {
+    const canvas = $('bench-canvas');
+    const wrap = $('canvas-wrap');
+    ensureCanvasSize(canvas, wrap, 800, 450);
+    ctx2d = canvas.getContext('2d');
+    canvas2d = canvas;
+    spawnParticles2D(2000);
+    test2dRunning = true;
+    test2dStartTime = performance.now();
+    test2dFPSSum = 0; test2dFPSCount = 0;
+    $('dot-2d').className = 'status-dot running';
+    function frame2D(ts) {
+      if(checkStop()) { test2dRunning=false; res(); return; }
+      const p = Math.min((ts-test2dStartTime)/8000, 1);
+      setStage('STAGE 1/4 — 2D GPU', Math.round(p*22));
+      draw2DFrameSilent(ts);
+      if(p >= 1) { test2dRunning=false; res(); return; }
+      raf2d = requestAnimationFrame(frame2D);
+    }
+    raf2d = requestAnimationFrame(frame2D);
+  });
+  if(!fullSuiteRunning) { finishSuite(); return; }
+  const avg2d = test2dFPSCount>0 ? test2dFPSSum/test2dFPSCount : 1;
+  const s2d = Math.round(avg2d*2000*3/10);
+  window._score2d = s2d;
+  $('cs-gpu2d').textContent = s2d.toLocaleString();
+  $('bar-gpu2d').style.width = Math.min(100, s2d/200)+'%';
+  $('dot-2d').className = 'status-dot done';
+  log(`[2D] Score: ${s2d.toLocaleString()}`,'log-ok');
+
+  // ---- STAGE 2: 3D GPU ----
+  setStage('STAGE 2/4 — 3D GPU', 25);
+  log('[SUITE] Running 3D GPU test...');
+  await new Promise(res => {
+    const canvas3 = $('bench-canvas-3d');
+    const wrap3 = $('canvas-wrap-3d');
+    ensureCanvasSize(canvas3, wrap3, 800, 450);
+    gl3d = canvas3.getContext('webgl') || canvas3.getContext('experimental-webgl');
+    if(!gl3d) { log('[3D] WebGL not available','log-err'); res(); return; }
+    // Re-init shaders if needed
+    if(!prog3d) {
+      if(!init3DCanvas()) { res(); return; }
+    }
+    buildGeometry3D(3);
+    test3dRunning = true;
+    test3dStartTime = performance.now();
+    test3dFPSSum = 0; test3dFPSCount = 0;
+    $('dot-3d').className = 'status-dot running';
+    function frame3D(ts) {
+      if(checkStop()) { test3dRunning=false; res(); return; }
+      const p = Math.min((ts-test3dStartTime)/8000, 1);
+      setStage('STAGE 2/4 — 3D GPU', 25+Math.round(p*22));
+      draw3DFrameSilent(ts);
+      if(p >= 1) { test3dRunning=false; res(); return; }
+      raf3d = requestAnimationFrame(frame3D);
+    }
+    raf3d = requestAnimationFrame(frame3D);
+  });
+  if(!fullSuiteRunning) { finishSuite(); return; }
+  const avg3d = test3dFPSCount>0 ? test3dFPSSum/test3dFPSCount : 1;
+  const s3d = Math.round(avg3d*(geom3d.nVerts||100)/50);
+  window._score3d = s3d;
+  $('cs-gpu3d').textContent = s3d.toLocaleString();
+  $('bar-gpu3d').style.width = Math.min(100, s3d/200)+'%';
+  $('dot-3d').className = 'status-dot done';
+  log(`[3D] Score: ${s3d.toLocaleString()}`,'log-ok');
+
+  // ---- STAGE 3: CPU ----
+  setStage('STAGE 3/4 — CPU', 50);
+  log('[SUITE] Running CPU test...');
+  await new Promise(r=>setTimeout(r,10));
+  if(!fullSuiteRunning) { finishSuite(); return; }
+  const cpuLimit = 200000;
+  const cpuSieve = new Uint8Array(cpuLimit); cpuSieve.fill(1); cpuSieve[0]=cpuSieve[1]=0;
+  for(let i=2;i*i<cpuLimit;i++) if(cpuSieve[i]) for(let j=i*i;j<cpuLimit;j+=i) cpuSieve[j]=0;
+  const suiteprimes = cpuSieve.reduce((s,v)=>s+v,0);
+  await new Promise(r=>setTimeout(r,20));
+  let sacc=0,siters=0; const st0=performance.now();
+  while(performance.now()-st0<600){for(let i=0;i<5000;i++) sacc+=Math.sin(i)*Math.cos(i);siters+=5000;}
+  const sopsMs = siters/(performance.now()-st0);
+  setStage('STAGE 3/4 — CPU', 72);
+  const sCPU = Math.round(suiteprimes/100+sopsMs*3);
+  window._scoreCPU = sCPU;
+  $('cs-cpu').textContent = sCPU.toLocaleString();
+  $('bar-cpu').style.width = Math.min(100, sCPU/150)+'%';
+  $('dot-cpu').className = 'status-dot done';
+  log(`[CPU] Score: ${sCPU.toLocaleString()}`,'log-ok');
+
+  // ---- STAGE 4: RAM ----
+  setStage('STAGE 4/4 — RAM', 75);
+  log('[SUITE] Running RAM test...');
+  await new Promise(r=>setTimeout(r,10));
+  if(!fullSuiteRunning) { finishSuite(); return; }
+  const rn = 4*1024*1024/8;
+  const rbuf = new Float64Array(rn);
+  const rt0 = performance.now();
+  for(let i=0;i<rn;i++) rbuf[i]=i*0.001;
+  const rwBW = ((rn*8)/(1024**3))/((performance.now()-rt0)/1000);
+  const rt1 = performance.now(); let rsum=0;
+  for(let i=0;i<rn;i++) rsum+=rbuf[i];
+  const rrBW = ((rn*8)/(1024**3))/((performance.now()-rt1)/1000);
+  const sRAM = Math.round((rwBW+rrBW)*400);
+  window._scoreRAM = sRAM;
+  $('cs-ram').textContent = sRAM.toLocaleString();
+  $('bar-ram').style.width = Math.min(100, sRAM/120)+'%';
+  $('dot-ram').className = 'status-dot done';
+  log(`[RAM] Score: ${sRAM.toLocaleString()}`,'log-ok');
+
+  // ---- TOTAL ----
+  setStage('COMPLETE', 100);
+  const total = Math.round((s2d+s3d+sCPU+sRAM)/4);
+  $('total-score-num').textContent = total.toLocaleString();
+  $('total-grade').innerHTML = grade(total, gpu2dGrades, gpu2dLabels);
+  $('total-score-box').style.display = 'block';
+  log(`[SUITE] === TOTAL SCORE: ${total.toLocaleString()} ===`,'log-ok');
+  finishSuite();
+});
+
+function finishSuite() {
+  fullSuiteRunning = false;
+  isAnyRunning = false;
+  $('btn-full').disabled = false;
+  $('btn-stop-full').disabled = true;
+}
+
+$('btn-stop-full').addEventListener('click', () => {
+  if(!fullSuiteRunning) return;
+  fullSuiteRunning = false;
+  test2dRunning = false;
+  test3dRunning = false;
+  if(raf2d){cancelAnimationFrame(raf2d);raf2d=null;}
+  if(raf3d){cancelAnimationFrame(raf3d);raf3d=null;}
+  $('full-stage').textContent = 'STOPPED';
+  log('[SUITE] Full suite stopped by user','log-warn');
+  finishSuite();
+});
+
+// Silent draw helpers for suite
+function draw2DFrameSilent(ts){
+  if(!ctx2d||!canvas2d) return;
+  const W=canvas2d.width,H=canvas2d.height;
+  ctx2d.fillStyle='rgba(5,8,16,0.18)';ctx2d.fillRect(0,0,W,H);
+  particles2d.forEach(p=>{
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0||p.x>W)p.vx*=-1;if(p.y<0||p.y>H)p.vy*=-1;
+    p.hue=(p.hue+1)%360;
+    const g=ctx2d.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r*3);
+    g.addColorStop(0,`hsla(${p.hue},100%,70%,0.8)`);
+    g.addColorStop(1,`hsla(${p.hue},100%,50%,0)`);
+    ctx2d.beginPath();ctx2d.arc(p.x,p.y,p.r*3,0,Math.PI*2);
+    ctx2d.fillStyle=g;ctx2d.fill();
+  });
+  test2dFPSSum+=globalFPS;test2dFPSCount++;
+}
+
+function draw3DFrameSilent(ts){
+  if(!gl3d) return;
+  const canvas=$('bench-canvas-3d');
+  const W=canvas.width,H=canvas.height;
+  gl3d.viewport(0,0,W,H);
+  gl3d.clearColor(0.02,0.03,0.08,1);
+  gl3d.clear(gl3d.COLOR_BUFFER_BIT|gl3d.DEPTH_BUFFER_BIT);
+  gl3d.enable(gl3d.DEPTH_TEST);
+  const t=ts*0.001;
+  const proj=perspective(Math.PI/4,W/H,0.1,100);
+  const view=translate(0,0,-5);
+  const rot=mat4mul(rotY(t*0.5),rotX(t*0.3));
+  const mvp=mat4mul(proj,mat4mul(view,rot));
+  gl3d.useProgram(prog3d);
+  gl3d.bindBuffer(gl3d.ARRAY_BUFFER,geom3d.buf);
+  const nV=geom3d.nVerts;
+  const posLoc=gl3d.getAttribLocation(prog3d,'a_pos');
+  const colLoc=gl3d.getAttribLocation(prog3d,'a_col');
+  gl3d.enableVertexAttribArray(posLoc);gl3d.enableVertexAttribArray(colLoc);
+  gl3d.vertexAttribPointer(posLoc,3,gl3d.FLOAT,false,0,0);
+  gl3d.vertexAttribPointer(colLoc,3,gl3d.FLOAT,false,0,nV*12);
+  const mvpLoc=gl3d.getUniformLocation(prog3d,'u_mvp');
+  gl3d.uniformMatrix4fv(mvpLoc,false,mvp);
+  gl3d.drawArrays(gl3d.POINTS,0,geom3d.nParticles);
+  gl3d.drawArrays(gl3d.LINES,geom3d.nParticles,nV-geom3d.nParticles);
+  test3dFPSSum+=globalFPS;test3dFPSCount++;
+}
+
+// All syntax errors fixed above
+</script>
+</body>
+</html>
