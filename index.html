@@ -5,6 +5,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BENCHCORE — System Diagnostics</title>
+  <link rel="stylesheet" href="theme.css">
+  <script src="theme-manager.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
 
@@ -93,6 +95,11 @@
       color: var(--dim);
       letter-spacing: 3px;
       margin-top: 3px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
     }
 
     /* FPS badge */
@@ -890,10 +897,16 @@
       <div class="logo">BENCH<span>CORE</span></div>
       <div class="tagline">SYSTEM DIAGNOSTICS // GPU + CPU + RAM STRESS TEST</div>
     </div>
-    <div id="fps-badge">
-      <div>
-        <div class="label">LIVE FPS</div>
-        <div id="fps-val">--</div>
+    <div class="header-right">
+      <div id="fps-badge">
+        <div>
+          <div class="label">LIVE FPS</div>
+          <div id="fps-val">--</div>
+        </div>
+      </div>
+      <div class="theme-toggle-wrap">
+        <span class="theme-label">THEME</span>
+        <button id="theme-toggle-btn" class="theme-btn"><span id="theme-toggle-icon">CYAN</span></button>
       </div>
     </div>
   </header>
@@ -1687,25 +1700,48 @@
       const counts = [500, 1500, 3000, 6000, 12000];
       const n = counts[intensity - 1];
       const verts = [], cols = [];
+      const theme = window.themeManager ? window.themeManager.getCurrentTheme() : 'default';
 
-      // Particles in sphere
-      for (let i = 0; i < n; i++) {
-        const theta = Math.random() * Math.PI * 2, phi = Math.acos(2 * Math.random() - 1);
-        const r = 0.5 + Math.random() * 1.5;
-        verts.push(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
-        const h = Math.random();
-        cols.push(h < 0.33 ? 0 : h < 0.66 ? 1 - h : h, h < 0.33 ? h : h < 0.66 ? 0 : 1 - h, h > 0.66 ? h : 0.2);
-      }
+      if (theme === 'crimson') {
+        // Spiral particle field
+        for (let i = 0; i < n; i++) {
+          const t = i / n * Math.PI * 20; // 10 spirals
+          const r = 0.5 + (i / n) * 1.5;
+          verts.push(r * Math.cos(t), r * Math.sin(t), (i / n) * 2 - 1);
+          const h = Math.random();
+          cols.push(1.0, h < 0.5 ? 0.2 : 0.5, 0.0);
+        }
 
-      // Cube wireframe
-      const cube = [
-        -1, -1, -1, 1, -1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, -1, 1, -1, -1, 1, -1, -1, -1, -1,
-        -1, -1, 1, 1, -1, 1, 1, -1, 1, 1, 1, 1, 1, 1, 1, -1, 1, 1, -1, 1, 1, -1, -1, 1,
-        -1, -1, -1, -1, -1, 1, 1, -1, -1, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, -1, -1, 1, 1
-      ];
-      for (let i = 0; i < cube.length; i += 3) {
-        verts.push(cube[i], cube[i + 1], cube[i + 2]);
-        cols.push(0, 1, 0.8);
+        // Octahedron wireframe
+        const oct = [
+          0,1.2,0, -1,0,-1,  0,1.2,0, 1,0,-1,  0,1.2,0, 1,0,1,   0,1.2,0, -1,0,1,
+          0,-1.2,0, -1,0,-1, 0,-1.2,0, 1,0,-1, 0,-1.2,0, 1,0,1,  0,-1.2,0, -1,0,1,
+          -1,0,-1, 1,0,-1, 1,0,-1, 1,0,1,  1,0,1, -1,0,1,  -1,0,1, -1,0,-1
+        ];
+        for (let i = 0; i < oct.length; i += 3) {
+          verts.push(oct[i], oct[i + 1], oct[i + 2]);
+          cols.push(1.0, 0.2, 0.2);
+        }
+      } else {
+        // Particles in sphere
+        for (let i = 0; i < n; i++) {
+          const theta = Math.random() * Math.PI * 2, phi = Math.acos(2 * Math.random() - 1);
+          const r = 0.5 + Math.random() * 1.5;
+          verts.push(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi));
+          const h = Math.random();
+          cols.push(h < 0.33 ? 0 : h < 0.66 ? 1 - h : h, h < 0.33 ? h : h < 0.66 ? 0 : 1 - h, h > 0.66 ? h : 0.2);
+        }
+
+        // Cube wireframe
+        const cube = [
+          -1, -1, -1, 1, -1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, -1, 1, -1, -1, 1, -1, -1, -1, -1,
+          -1, -1, 1, 1, -1, 1, 1, -1, 1, 1, 1, 1, 1, 1, 1, -1, 1, 1, -1, 1, 1, -1, -1, 1,
+          -1, -1, -1, -1, -1, 1, 1, -1, -1, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, -1, -1, 1, 1
+        ];
+        for (let i = 0; i < cube.length; i += 3) {
+          verts.push(cube[i], cube[i + 1], cube[i + 2]);
+          cols.push(0, 1, 0.8);
+        }
       }
 
       const buf = gl3d.createBuffer();
