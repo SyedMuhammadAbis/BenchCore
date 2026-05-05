@@ -64,3 +64,32 @@ body[data-theme="crimson"]::after {
   color: #000;
   box-shadow: var(--glow);
 }
+
+/* --- Cyberpunk Theme --- */
+body[data-theme="cyberpunk"] {
+  --bg: #070212;
+  --panel: #110624;
+  --border: #2a114f;
+  --accent: #e81cff;
+  --accent-rgb: 232, 28, 255;
+  --accent2: #00f0ff;
+  --accent3: #fcee0a;
+  --dim: #603a8a;
+  --text: #eadeff;
+  --glow: 0 0 18px rgba(232, 28, 255, 0.5);
+  --glow2: 0 0 18px rgba(0, 240, 255, 0.5);
+}
+
+body[data-theme="cyberpunk"]::before {
+  background: repeating-linear-gradient(0deg,
+      transparent,
+      transparent 2px,
+      rgba(var(--accent-rgb), 0.015) 2px,
+      rgba(var(--accent-rgb), 0.015) 4px);
+}
+
+body[data-theme="cyberpunk"]::after {
+  background-image:
+    linear-gradient(rgba(var(--accent-rgb), 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--accent-rgb), 0.05) 1px, transparent 1px);
+}

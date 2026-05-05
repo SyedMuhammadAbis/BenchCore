@@ -1548,11 +1548,13 @@
         return;
       }
 
-      const isCrimson = window.themeManager && window.themeManager.getCurrentTheme() === 'crimson';
-      const themeRgbStr = isCrimson ? '255,42,75' : '0,245,200';
+      const currentTheme = window.themeManager ? window.themeManager.getCurrentTheme() : 'default';
+      const isCrimson = currentTheme === 'crimson';
+      const isCyberpunk = currentTheme === 'cyberpunk';
+      const themeRgbStr = isCrimson ? '255,42,75' : isCyberpunk ? '232,28,255' : '0,245,200';
 
       // Background with trail
-      ctx2d.fillStyle = isCrimson ? 'rgba(13,4,4,0.18)' : 'rgba(5,8,16,0.18)';
+      ctx2d.fillStyle = isCrimson ? 'rgba(13,4,4,0.18)' : isCyberpunk ? 'rgba(7,2,18,0.18)' : 'rgba(5,8,16,0.18)';
       ctx2d.fillRect(0, 0, W, H);
 
       // Grid
@@ -1571,6 +1573,8 @@
         let drawHue = p.hue;
         if (isCrimson) {
             drawHue = (340 + (p.hue / 360) * 60) % 360;
+        } else if (isCyberpunk) {
+            drawHue = (270 + (p.hue / 360) * 80) % 360;
         } else {
             drawHue = 160 + (p.hue / 360) * 80;
         }
@@ -1620,6 +1624,8 @@
         let shapeHue = (t * 50 + s * 60) % 360;
         if (isCrimson) {
             shapeHue = (340 + (shapeHue / 360) * 60) % 360;
+        } else if (isCyberpunk) {
+            shapeHue = (270 + (shapeHue / 360) * 80) % 360;
         } else {
             shapeHue = 160 + (shapeHue / 360) * 80;
         }
@@ -1763,6 +1769,28 @@
         for (let i = 0; i < oct.length; i += 3) {
           verts.push(oct[i], oct[i + 1], oct[i + 2]);
           cols.push(1.0, 0.2, 0.2);
+        }
+      } else if (theme === 'cyberpunk') {
+        // Double helix / neon synthwave ring
+        for (let i = 0; i < n; i++) {
+          const t = i / n * Math.PI * 2 * 12;
+          const phase = i % 2 === 0 ? 0 : Math.PI;
+          const R = 1.0;
+          const r = 0.4 * Math.cos(t * 3 + phase);
+          const z = 0.4 * Math.sin(t * 3 + phase);
+          verts.push((R + r) * Math.cos(t), (R + r) * Math.sin(t), z);
+          cols.push(0.9, 0.1, 1.0); // Neon Pink
+        }
+
+        // Cube wireframe but with Cyberpunk Cyan/Yellow
+        const cube = [
+          -1, -1, -1, 1, -1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, -1, 1, -1, -1, 1, -1, -1, -1, -1,
+          -1, -1, 1, 1, -1, 1, 1, -1, 1, 1, 1, 1, 1, 1, 1, -1, 1, 1, -1, 1, 1, -1, -1, 1,
+          -1, -1, -1, -1, -1, 1, 1, -1, -1, 1, -1, 1, 1, 1, -1, 1, 1, 1, -1, 1, -1, -1, 1, 1
+        ];
+        for (let i = 0; i < cube.length; i += 3) {
+          verts.push(cube[i], cube[i + 1], cube[i + 2]);
+          cols.push(0.0, 0.94, 1.0); // Cyan
         }
       } else {
         // Particles in sphere
