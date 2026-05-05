@@ -1738,7 +1738,7 @@
       const canvas = $('bench-canvas-3d');
       const W = canvas.width, H = canvas.height;
       const elapsed = timestamp - test3dStartTime;
-      const progress = Math.min(elapsed / 15000, 1);
+      const progress = Math.min(elapsed / 60000, 1); // 60 seconds
       $('prog-3d').style.width = (progress * 100) + '%';
       if (progress >= 1) { stop3D(true); return; }
 
@@ -1850,33 +1850,34 @@
       log(`[CPU] Primes: ${primes.toLocaleString()} | ${sieveMs}ms`, 'log-ok');
       await yld(20); if (!cpuRunning) return;
 
-      // --- Test 2: Sustained float throughput (2 seconds) ---
+      // --- Test 2: Sustained float throughput (30 seconds) ---
       log('[CPU] 2/4 — Sustained float throughput...');
       $('prog-cpu').style.width = '30%';
       await yld(10); if (!cpuRunning) return;
       let acc = 0, iters = 0;
-      const floatEnd = performance.now() + 2000;
+      const floatEnd = performance.now() + 30000;
       while (performance.now() < floatEnd) {
         // Batch of 50k ops then yield so browser stays responsive
         for (let i = 0; i < 50000; i++) acc += Math.sin(i * 0.001) * Math.cos(i * 0.0013) * Math.sqrt(i + 1);
         iters += 50000;
-        $('prog-cpu').style.width = (30 + Math.min(28, (iters / 5e6) * 28)) + '%';
+        const pFloat = Math.min(1, (performance.now() - floatEnd + 30000) / 30000);
+        $('prog-cpu').style.width = (30 + pFloat * 28) + '%';
         await yld(0);
         if (!cpuRunning) return;
       }
-      const opsPerSec = iters / 2; // ops/sec (we ran for 2s)
+      const opsPerSec = iters / 30; // ops/sec (we ran for 30s)
       $('cpu-ops').textContent = (opsPerSec / 1e6).toFixed(2);
       log(`[CPU] ${(opsPerSec).toLocaleString()} ops/s (${(opsPerSec/1e6).toFixed(2)}M)`, 'log-ok');
       $('prog-cpu').style.width = '58%';
       await yld(20); if (!cpuRunning) return;
 
-      // --- Test 3: Matrix multiply (1s sustained) ---
+      // --- Test 3: Matrix multiply (25s sustained) ---
       log('[CPU] 3/4 — 128×128 matrix multiply...');
       const N = 128;
       const A = new Float64Array(N * N), B = new Float64Array(N * N), C = new Float64Array(N * N);
       for (let i = 0; i < N * N; i++) { A[i] = Math.random(); B[i] = Math.random(); }
       let matOps = 0;
-      const matEnd = performance.now() + 1200;
+      const matEnd = performance.now() + 25000;
       while (performance.now() < matEnd) {
         for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
           let s = 0;
@@ -1964,49 +1965,61 @@
       $('prog-ram').style.width = '22%';
       await yld(20); if (!ramRunning) return;
 
-      // --- Test 2: Sequential Write (3 passes, averaged) ---
-      log('[RAM] Sequential write (3 passes)...');
-      let totalWTime = 0;
-      for (let pass = 0; pass < 3; pass++) {
+      // --- Test 2: Sequential Write (15s duration) ---
+      log('[RAM] Sequential write (15s pass)...');
+      let totalWTime = 0, wPasses = 0;
+      const wEnd = performance.now() + 15000;
+      while (performance.now() < wEnd) {
         if (!ramRunning) return;
         const wt0 = performance.now();
         for (let i = 0; i < n; i++) buf[i] = i * 0.001;
         totalWTime += performance.now() - wt0;
-        $('prog-ram').style.width = (22 + (pass + 1) * 10) + '%';
-        await yld(5);
+        wPasses++;
+        const pw = Math.min(1, (performance.now() - wEnd + 15000)/15000);
+        $('prog-ram').style.width = (22 + pw * 33) + '%';
+        await yld(0);
       }
-      const wBW = (n * 8 * 3) / (1024 ** 3) / (totalWTime / 1000);
+      const wBW = (n * 8 * wPasses) / (1024 ** 3) / (totalWTime / 1000);
       $('ram-write').textContent = wBW.toFixed(2);
       log(`[RAM] Write: ${wBW.toFixed(2)} GB/s`, 'log-ok');
       $('prog-ram').style.width = '55%';
       await yld(20); if (!ramRunning) return;
 
-      // --- Test 3: Sequential Read (3 passes, averaged) ---
-      log('[RAM] Sequential read (3 passes)...');
-      let totalRTime = 0, sum = 0;
-      for (let pass = 0; pass < 3; pass++) {
+      // --- Test 3: Sequential Read (15s duration) ---
+      log('[RAM] Sequential read (15s pass)...');
+      let totalRTime = 0, sum = 0, rPasses = 0;
+      const rEnd = performance.now() + 15000;
+      while (performance.now() < rEnd) {
         if (!ramRunning) return;
         const rt0 = performance.now();
         for (let i = 0; i < n; i++) sum += buf[i];
         totalRTime += performance.now() - rt0;
-        $('prog-ram').style.width = (55 + (pass + 1) * 7) + '%';
-        await yld(5);
+        rPasses++;
+        const pr = Math.min(1, (performance.now() - rEnd + 15000)/15000);
+        $('prog-ram').style.width = (55 + pr * 21) + '%';
+        await yld(0);
       }
-      const rBW = (n * 8 * 3) / (1024 ** 3) / (totalRTime / 1000);
+      const rBW = (n * 8 * rPasses) / (1024 ** 3) / (totalRTime / 1000);
       $('ram-read').textContent = rBW.toFixed(2);
       log(`[RAM] Read: ${rBW.toFixed(2)} GB/s`, 'log-ok');
       $('prog-ram').style.width = '76%';
       await yld(20); if (!ramRunning) return;
 
-      // --- Test 4: Random Access Latency ---
-      log('[RAM] Random access latency...');
-      const iters = 50000;
-      const indices = new Uint32Array(iters);
-      for (let i = 0; i < iters; i++) indices[i] = Math.floor(Math.random() * n);
-      const rt0 = performance.now();
-      let randAcc = 0;
-      for (let i = 0; i < iters; i++) randAcc += buf[indices[i]];
-      const randNs = ((performance.now() - rt0) / iters) * 1e6;
+      // --- Test 4: Random Access Latency (15s duration) ---
+      log('[RAM] Random access latency (15s)...');
+      let randAcc = 0, randIters = 0, totalRandTime = 0;
+      const randEnd = performance.now() + 15000;
+      while (performance.now() < randEnd) {
+        const batch = 100000;
+        const indices = new Uint32Array(batch);
+        for (let i = 0; i < batch; i++) indices[i] = Math.floor(Math.random() * n);
+        const rt0 = performance.now();
+        for (let i = 0; i < batch; i++) randAcc += buf[indices[i]];
+        totalRandTime += performance.now() - rt0;
+        randIters += batch;
+        await yld(0); if (!ramRunning) return;
+      }
+      const randNs = (totalRandTime / randIters) * 1e6;
       $('ram-random').textContent = randNs.toFixed(1);
       log(`[RAM] Random latency: ${randNs.toFixed(1)}ns | dummy=${randAcc.toFixed(0)}`, 'log-ok');
       $('prog-ram').style.width = '100%';
@@ -2084,7 +2097,7 @@
         $('dot-2d').className = 'status-dot running';
         function frame2D(ts) {
           if (checkStop()) { test2dRunning = false; res(); return; }
-          const p = Math.min((ts - test2dStartTime) / 8000, 1);
+          const p = Math.min((ts - test2dStartTime) / 60000, 1);
           setStage('STAGE 1/5 — 2D GPU', Math.round(p * 18));
           draw2DFrameSilent(ts);
           if (p >= 1) { test2dRunning = false; res(); return; }
@@ -2121,7 +2134,7 @@
         $('dot-3d').className = 'status-dot running';
         function frame3D(ts) {
           if (checkStop()) { test3dRunning = false; res(); return; }
-          const p = Math.min((ts - test3dStartTime) / 8000, 1);
+          const p = Math.min((ts - test3dStartTime) / 60000, 1);
           setStage('STAGE 2/5 — 3D GPU', 20 + Math.round(p * 18));
           draw3DFrameSilent(ts);
           if (p >= 1) { test3dRunning = false; res(); return; }
@@ -2156,21 +2169,22 @@
       await new Promise(r => setTimeout(r, 10)); if (!fullSuiteRunning) { finishSuite(); return; }
 
       let sacc = 0, siters = 0;
-      const floatEnd = performance.now() + 1000; // 1s float ops
+      const floatEnd = performance.now() + 30000; // 30s float ops
       while (performance.now() < floatEnd) {
         for (let i = 0; i < 50000; i++) sacc += Math.sin(i * 0.001) * Math.cos(i * 0.0013) * Math.sqrt(i + 1);
         siters += 50000;
-        setStage('STAGE 3/5 — CPU', 45 + Math.min(8, ((siters / 2.5e6) * 8)));
+        const pFloat = Math.min(1, (performance.now() - floatEnd + 30000) / 30000);
+        setStage('STAGE 3/5 — CPU', 45 + pFloat * 8);
         await new Promise(r => setTimeout(r, 0));
         if (!fullSuiteRunning) { finishSuite(); return; }
       }
-      const sopsPerSec = siters; // ~ops per second since we ran 1s
+      const sopsPerSec = siters / 30; // ops per second since we ran 30s
 
       const N = 96;
       const A = new Float64Array(N * N), B = new Float64Array(N * N), C = new Float64Array(N * N);
       for (let i = 0; i < N * N; i++) { A[i] = Math.random(); B[i] = Math.random(); }
       let matOps = 0;
-      const matEnd = performance.now() + 600;
+      const matEnd = performance.now() + 25000; // 25s matrix ops
       while (performance.now() < matEnd) {
         for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
           let s = 0;
@@ -2204,25 +2218,31 @@
       setStage('STAGE 4/5 — RAM', 65);
       await new Promise(r => setTimeout(r, 10)); if (!fullSuiteRunning) { finishSuite(); return; }
 
-      let rTotalWTime = 0;
-      for (let pass = 0; pass < 2; pass++) {
+      let rTotalWTime = 0, wPasses = 0;
+      const wEnd = performance.now() + 15000;
+      while (performance.now() < wEnd) {
         const wt0 = performance.now();
         for (let i = 0; i < nRam; i++) rbuf[i] = i * 0.001;
         rTotalWTime += performance.now() - wt0;
-        setStage('STAGE 4/5 — RAM', 65 + pass * 5);
-        await new Promise(r => setTimeout(r, 5)); if (!fullSuiteRunning) { finishSuite(); return; }
+        wPasses++;
+        const pw = Math.min(1, (performance.now() - wEnd + 15000)/15000);
+        setStage('STAGE 4/5 — RAM', 65 + pw * 5);
+        await new Promise(r => setTimeout(r, 0)); if (!fullSuiteRunning) { finishSuite(); return; }
       }
-      const rwBW = (nRam * 8 * 2) / (1024 ** 3) / (rTotalWTime / 1000);
+      const rwBW = (nRam * 8 * wPasses) / (1024 ** 3) / (rTotalWTime / 1000);
 
-      let rTotalRTime = 0, rsum = 0;
-      for (let pass = 0; pass < 2; pass++) {
+      let rTotalRTime = 0, rsum = 0, rPasses = 0;
+      const rEnd = performance.now() + 15000;
+      while (performance.now() < rEnd) {
         const rt0 = performance.now();
         for (let i = 0; i < nRam; i++) rsum += rbuf[i];
         rTotalRTime += performance.now() - rt0;
-        setStage('STAGE 4/5 — RAM', 75 + pass * 4);
-        await new Promise(r => setTimeout(r, 5)); if (!fullSuiteRunning) { finishSuite(); return; }
+        rPasses++;
+        const pr = Math.min(1, (performance.now() - rEnd + 15000)/15000);
+        setStage('STAGE 4/5 — RAM', 70 + pr * 10);
+        await new Promise(r => setTimeout(r, 0)); if (!fullSuiteRunning) { finishSuite(); return; }
       }
-      const rrBW = (nRam * 8 * 2) / (1024 ** 3) / (rTotalRTime / 1000);
+      const rrBW = (nRam * 8 * rPasses) / (1024 ** 3) / (rTotalRTime / 1000);
 
       const sRAM = Math.max(0, Math.round((rwBW + rrBW) * 600 - rAllocTime * 0.2));
       window._scoreRAM = sRAM;
@@ -2580,13 +2600,22 @@
         req.onsuccess=async e=>{
           const db=e.target.result;
           const small=new Uint8Array(4096);
-          const ops=40; const t0=performance.now();
-          for(let i=0;i<ops;i++){
+          const t0=performance.now();
+          const iopsEnd = t0 + 30000; // 30 seconds
+          let ops = 0;
+          while (performance.now() < iopsEnd) {
             await new Promise((ok,fail)=>{
               const tx=db.transaction('i','readwrite');
-              tx.objectStore('i').put(small,i%8);
+              tx.objectStore('i').put(small,ops%8);
               tx.oncomplete=ok; tx.onerror=fail;
             });
+            ops++;
+            if (!storageRunning && !fullSuiteRunning) break; 
+            // Yield occasionally to avoid freezing if IDB is extremely fast
+            if (ops % 100 === 0) {
+                if ($('prog-storage-label')) $('prog-storage-label').textContent=`TESTING IOPS... ${ops} ops`;
+                await new Promise(r=>setTimeout(r,0));
+            }
           }
           db.close();
           res(Math.round(ops/((performance.now()-t0)/1000)));
@@ -2604,8 +2633,8 @@
       ['st-write','st-read','st-iops','st-type'].forEach(id=>$(id).textContent='--');
       log('[STO] Starting storage benchmark...','log-ok');
 
-      const sizes=[10,25,50,100];
-      const sizeMB = sizes[intensity-1];
+      const sizes=[100,250,500,1000,2000];
+      const sizeMB = sizes[intensity-1] || 500;
       const chunk = new Uint8Array(1024*1024); // 1MB
       for(let i=0;i<chunk.length;i+=4){const r=Math.random()*0xFFFFFFFF;chunk[i]=r&255;chunk[i+1]=(r>>8)&255;chunk[i+2]=(r>>16)&255;chunk[i+3]=(r>>24)&255;}
 
@@ -2686,10 +2715,12 @@
       const chunk=new Uint8Array(1024*1024);
       for(let i=0;i<chunk.length;i+=4){const r=Math.random()*0xFFFFFFFF;chunk[i]=r&255;chunk[i+1]=(r>>8)&255;}
       let wMBps=0,rMBps=0,iops=0;
+      setStage('STAGE 5/5 — STORAGE (Seq)', 85);
       try{
-        const res=await idbWriteRead(10,chunk,()=>{});
+        const res=await idbWriteRead(100,chunk,()=>{}); // 100MB seq write/read for suite
         wMBps=res.w; rMBps=res.r;
       }catch(e){}
+      setStage('STAGE 5/5 — STORAGE (IOPS)', 90);
       try{ iops=await measureIopsIDB(); }catch(e){}
       storageRunning=false;
       const typeInfo=detectStorageType(wMBps);
