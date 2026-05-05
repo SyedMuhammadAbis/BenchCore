@@ -1717,7 +1717,11 @@
 
     function mat4mul(a, b) {
       const r = new Float32Array(16);
-      for (let i = 0; i < 4; i++)for (let j = 0; j < 4; j++)for (let k = 0; k < 4; k++)r[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
+      for(let i=0; i<4; i++) {
+        for(let j=0; j<4; j++) {
+          r[i*4+j] = a[j]*b[i*4] + a[j+4]*b[i*4+1] + a[j+8]*b[i*4+2] + a[j+12]*b[i*4+3];
+        }
+      }
       return r;
     }
     function perspective(fov, asp, near, far) {
@@ -1777,6 +1781,9 @@
       if (raf3d) { cancelAnimationFrame(raf3d); raf3d = null; }
       $('btn-start-3d').disabled = false; $('btn-stop-3d').disabled = true;
       $('dot-3d').className = 'status-dot ' + (completed ? 'done' : '');
+      $('canvas-overlay-3d').style.opacity = '1'; 
+      $('canvas-overlay-3d').style.pointerEvents = 'auto';
+      $('info-3d-overlay').style.display = 'none';
       if (completed) {
         const avg = test3dFPSCount > 0 ? test3dFPSSum / test3dFPSCount : 0;
         const score = Math.round(avg * geom3d.nVerts / 50);
@@ -1818,72 +1825,97 @@
       $('dot-cpu').className = 'status-dot running';
       $('btn-start-cpu').disabled = true; $('btn-stop-cpu').disabled = false;
       $('score-box-cpu').style.display = 'none';
+      $('prog-cpu').style.width = '0%';
       log('[CPU] Starting benchmark...', 'log-ok');
 
-      const limits = [50000, 100000, 200000, 500000, 1000000];
+      const limits = [100000, 250000, 500000, 1000000, 2000000];
       const limit = limits[intensity - 1];
+      const yld = (ms=0) => new Promise(r => setTimeout(r, ms));
 
-      // Yield helper
-      const yld = () => new Promise(r => setTimeout(r, 0));
-
-      // Test 1: Prime sieve
-      $('prog-cpu').style.width = '10%';
-      log('[CPU] Test 1/4: Sieve of Eratosthenes...');
-      await yld(); if (!cpuRunning) return;
-      let t0 = performance.now();
+      // --- Test 1: Sieve of Eratosthenes ---
+      log(`[CPU] 1/4 — Sieve up to ${limit.toLocaleString()}...`);
+      $('prog-cpu').style.width = '5%';
+      await yld(10); if (!cpuRunning) return;
+      const t0 = performance.now();
       const sieve = new Uint8Array(limit); sieve.fill(1);
       sieve[0] = sieve[1] = 0;
-      for (let i = 2; i * i < limit; i++) if (sieve[i]) for (let j = i * i; j < limit; j += i) sieve[j] = 0;
-      const primes = sieve.reduce((s, v) => s + v, 0);
-      const t1 = performance.now() - t0;
-      $('cpu-primes').textContent = primes.toLocaleString();
-      log(`[CPU] Primes: ${primes.toLocaleString()} in ${Math.round(t1)}ms`, 'log-ok');
-      $('prog-cpu').style.width = '35%'; await yld(); if (!cpuRunning) return;
-
-      // Test 2: Float ops/sec
-      log('[CPU] Test 2/4: Float operations...');
-      t0 = performance.now();
-      let acc = 0, iters = 0;
-      while (performance.now() - t0 < 800) {
-        for (let i = 0; i < 10000; i++) acc += Math.sin(i) * Math.cos(i) * Math.sqrt(i + 1);
-        iters += 10000;
+      for (let i = 2; i * i < limit; i++) {
+        if (!sieve[i]) continue;
+        for (let j = i * i; j < limit; j += i) sieve[j] = 0;
       }
-      const opsMs = iters / (performance.now() - t0);
-      $('cpu-ops').textContent = (opsMs / 1000).toFixed(2);
-      log(`[CPU] ${(opsMs * 1000).toLocaleString()} ops/s`, 'log-ok');
-      $('prog-cpu').style.width = '60%'; await yld(); if (!cpuRunning) return;
+      const primes = sieve.reduce((s, v) => s + v, 0);
+      const sieveMs = Math.round(performance.now() - t0);
+      $('cpu-primes').textContent = primes.toLocaleString();
+      $('prog-cpu').style.width = '28%';
+      log(`[CPU] Primes: ${primes.toLocaleString()} | ${sieveMs}ms`, 'log-ok');
+      await yld(20); if (!cpuRunning) return;
 
-      // Test 3: Matrix multiply
-      log('[CPU] Test 3/4: 64×64 matrix multiply...');
-      const N = 64, A = [], B = [], C = [];
-      for (let i = 0; i < N; i++) { A[i] = []; B[i] = []; C[i] = new Float64Array(N); for (let j = 0; j < N; j++) { A[i][j] = Math.random(); B[i][j] = Math.random(); } }
-      t0 = performance.now();
+      // --- Test 2: Sustained float throughput (2 seconds) ---
+      log('[CPU] 2/4 — Sustained float throughput...');
+      $('prog-cpu').style.width = '30%';
+      await yld(10); if (!cpuRunning) return;
+      let acc = 0, iters = 0;
+      const floatEnd = performance.now() + 2000;
+      while (performance.now() < floatEnd) {
+        // Batch of 50k ops then yield so browser stays responsive
+        for (let i = 0; i < 50000; i++) acc += Math.sin(i * 0.001) * Math.cos(i * 0.0013) * Math.sqrt(i + 1);
+        iters += 50000;
+        $('prog-cpu').style.width = (30 + Math.min(28, (iters / 5e6) * 28)) + '%';
+        await yld(0);
+        if (!cpuRunning) return;
+      }
+      const opsPerSec = iters / 2; // ops/sec (we ran for 2s)
+      $('cpu-ops').textContent = (opsPerSec / 1e6).toFixed(2);
+      log(`[CPU] ${(opsPerSec).toLocaleString()} ops/s (${(opsPerSec/1e6).toFixed(2)}M)`, 'log-ok');
+      $('prog-cpu').style.width = '58%';
+      await yld(20); if (!cpuRunning) return;
+
+      // --- Test 3: Matrix multiply (1s sustained) ---
+      log('[CPU] 3/4 — 128×128 matrix multiply...');
+      const N = 128;
+      const A = new Float64Array(N * N), B = new Float64Array(N * N), C = new Float64Array(N * N);
+      for (let i = 0; i < N * N; i++) { A[i] = Math.random(); B[i] = Math.random(); }
       let matOps = 0;
-      while (performance.now() - t0 < 600) {
-        for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { let s = 0; for (let k = 0; k < N; k++) s += A[i][k] * B[k][j]; C[i][j] = s; }
+      const matEnd = performance.now() + 1200;
+      while (performance.now() < matEnd) {
+        for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+          let s = 0;
+          for (let k = 0; k < N; k++) s += A[i * N + k] * B[k * N + j];
+          C[i * N + j] = s;
+        }
         matOps++;
+        await yld(0); if (!cpuRunning) return;
       }
       $('cpu-matrix').textContent = matOps.toLocaleString();
-      log(`[CPU] Matrix ops: ${matOps}`, 'log-ok');
-      $('prog-cpu').style.width = '80%'; await yld(); if (!cpuRunning) return;
+      log(`[CPU] Matrix 128×128 ops: ${matOps}`, 'log-ok');
+      $('prog-cpu').style.width = '80%';
+      await yld(20); if (!cpuRunning) return;
 
-      // Test 4: Sort
-      log('[CPU] Test 4/4: Array sort...');
-      const arr = new Float64Array(limit / 5);
-      for (let i = 0; i < arr.length; i++) arr[i] = Math.random();
-      t0 = performance.now();
+      // --- Test 4: Sort ---
+      log('[CPU] 4/4 — Sort benchmark...');
+      const sortN = Math.min(limit / 4, 500000);
+      const arr = new Float64Array(sortN);
+      for (let i = 0; i < sortN; i++) arr[i] = Math.random();
+      await yld(10); if (!cpuRunning) return;
+      const sortT0 = performance.now();
       const sorted = [...arr].sort((a, b) => a - b);
-      const sortTime = Math.round(performance.now() - t0);
+      const sortTime = Math.round(performance.now() - sortT0);
       $('cpu-sort').textContent = sortTime;
-      log(`[CPU] Sort ${arr.length.toLocaleString()} items in ${sortTime}ms`, 'log-ok');
+      log(`[CPU] Sorted ${sortN.toLocaleString()} items: ${sortTime}ms`, 'log-ok');
       $('prog-cpu').style.width = '100%';
 
-      const score = Math.round(primes / 100 + opsMs * 5 + matOps * 200 - sortTime * 0.5);
-      $('score-cpu-num').textContent = score.toLocaleString();
-      $('score-cpu-grade').innerHTML = grade(score, [0, 1000, 3000, 7000, 15000], gpu2dLabels);
+      // Score: all positive components, no negative penalty
+      const score = Math.round(
+        primes / 80 +
+        opsPerSec / 2000 +
+        matOps * 300 +
+        Math.max(0, 5000 - sortTime * 2)
+      );
+      countUp('score-cpu-num', score);
+      $('score-cpu-grade').innerHTML = grade(score, [0, 3000, 8000, 18000, 35000], gpu2dLabels);
       $('score-box-cpu').style.display = 'block';
       window._scoreCPU = score;
-      log(`[CPU] Score: ${score.toLocaleString()}`, 'log-ok');
+      log(`[CPU] ✅ Score: ${score.toLocaleString()}`, 'log-ok');
       cpuRunning = false; isAnyRunning = false;
       $('dot-cpu').className = 'status-dot done';
       $('btn-start-cpu').disabled = false; $('btn-stop-cpu').disabled = true;
@@ -1911,65 +1943,80 @@
       $('dot-ram').className = 'status-dot running';
       $('btn-start-ram').disabled = true; $('btn-stop-ram').disabled = false;
       $('score-box-ram').style.display = 'none';
+      $('prog-ram').style.width = '0%';
       log('[RAM] Starting benchmark...', 'log-ok');
 
-      const sizes = [1, 4, 8, 16, 32]; // MB
-      const sizeMB = sizes[intensity - 1];
-      const n = sizeMB * 1024 * 1024 / 8; // float64 count
+      // Larger buffers so timing is meaningful
+      const mbSizes = [64, 128, 256, 384, 512];
+      const sizeMB = mbSizes[intensity - 1];
+      const n = (sizeMB * 1024 * 1024) / 8; // Float64 elements
+      const yld = (ms=0) => new Promise(r => setTimeout(r, ms));
 
-      const yld = () => new Promise(r => setTimeout(r, 0));
-
-      // Test 1: Allocation speed
-      $('prog-ram').style.width = '15%';
-      log(`[RAM] Allocating ${sizeMB}MB...`);
-      await yld(); if (!ramRunning) return;
-      let t0 = performance.now();
+      // --- Test 1: Allocation ---
+      log(`[RAM] Allocating ${sizeMB} MB...`);
+      $('prog-ram').style.width = '8%';
+      await yld(10); if (!ramRunning) return;
+      const t0 = performance.now();
       const buf = new Float64Array(n);
       const allocTime = Math.round(performance.now() - t0);
       $('ram-alloc').textContent = allocTime;
-      log(`[RAM] Alloc ${sizeMB}MB in ${allocTime}ms`, 'log-ok');
-      $('prog-ram').style.width = '35%'; await yld(); if (!ramRunning) return;
+      log(`[RAM] Alloc ${sizeMB}MB: ${allocTime}ms`, 'log-ok');
+      $('prog-ram').style.width = '22%';
+      await yld(20); if (!ramRunning) return;
 
-      // Test 2: Sequential Write
-      log('[RAM] Sequential write...');
-      t0 = performance.now();
-      for (let i = 0; i < n; i++) buf[i] = i * 0.001;
-      const wTime = performance.now() - t0;
-      const wBW = ((n * 8) / (1024 ** 3)) / (wTime / 1000);
+      // --- Test 2: Sequential Write (3 passes, averaged) ---
+      log('[RAM] Sequential write (3 passes)...');
+      let totalWTime = 0;
+      for (let pass = 0; pass < 3; pass++) {
+        if (!ramRunning) return;
+        const wt0 = performance.now();
+        for (let i = 0; i < n; i++) buf[i] = i * 0.001;
+        totalWTime += performance.now() - wt0;
+        $('prog-ram').style.width = (22 + (pass + 1) * 10) + '%';
+        await yld(5);
+      }
+      const wBW = (n * 8 * 3) / (1024 ** 3) / (totalWTime / 1000);
       $('ram-write').textContent = wBW.toFixed(2);
       log(`[RAM] Write: ${wBW.toFixed(2)} GB/s`, 'log-ok');
-      $('prog-ram').style.width = '60%'; await yld(); if (!ramRunning) return;
+      $('prog-ram').style.width = '55%';
+      await yld(20); if (!ramRunning) return;
 
-      // Test 3: Sequential Read
-      log('[RAM] Sequential read...');
-      t0 = performance.now();
-      let sum = 0;
-      for (let i = 0; i < n; i++) sum += buf[i];
-      const rTime = performance.now() - t0;
-      const rBW = ((n * 8) / (1024 ** 3)) / (rTime / 1000);
+      // --- Test 3: Sequential Read (3 passes, averaged) ---
+      log('[RAM] Sequential read (3 passes)...');
+      let totalRTime = 0, sum = 0;
+      for (let pass = 0; pass < 3; pass++) {
+        if (!ramRunning) return;
+        const rt0 = performance.now();
+        for (let i = 0; i < n; i++) sum += buf[i];
+        totalRTime += performance.now() - rt0;
+        $('prog-ram').style.width = (55 + (pass + 1) * 7) + '%';
+        await yld(5);
+      }
+      const rBW = (n * 8 * 3) / (1024 ** 3) / (totalRTime / 1000);
       $('ram-read').textContent = rBW.toFixed(2);
       log(`[RAM] Read: ${rBW.toFixed(2)} GB/s`, 'log-ok');
-      $('prog-ram').style.width = '80%'; await yld(); if (!ramRunning) return;
+      $('prog-ram').style.width = '76%';
+      await yld(20); if (!ramRunning) return;
 
-      // Test 4: Random access latency
+      // --- Test 4: Random Access Latency ---
       log('[RAM] Random access latency...');
-      const iters = 10000;
+      const iters = 50000;
       const indices = new Uint32Array(iters);
       for (let i = 0; i < iters; i++) indices[i] = Math.floor(Math.random() * n);
-      t0 = performance.now();
-      let acc = 0;
-      for (let i = 0; i < iters; i++) acc += buf[indices[i]];
-      const randTime = ((performance.now() - t0) / iters) * 1000000; // nanoseconds per op
-      $('ram-random').textContent = randTime.toFixed(1);
-      log(`[RAM] Random latency: ${randTime.toFixed(1)}ns`, 'log-ok');
+      const rt0 = performance.now();
+      let randAcc = 0;
+      for (let i = 0; i < iters; i++) randAcc += buf[indices[i]];
+      const randNs = ((performance.now() - rt0) / iters) * 1e6;
+      $('ram-random').textContent = randNs.toFixed(1);
+      log(`[RAM] Random latency: ${randNs.toFixed(1)}ns | dummy=${randAcc.toFixed(0)}`, 'log-ok');
       $('prog-ram').style.width = '100%';
 
-      const score = Math.round((wBW + rBW) * 500 - randTime * 2 - allocTime);
-      $('score-ram-num').textContent = Math.max(0, score).toLocaleString();
-      $('score-ram-grade').innerHTML = grade(score, [0, 500, 1500, 3000, 6000], gpu2dLabels);
+      const score = Math.max(0, Math.round((wBW + rBW) * 600 - randNs * 0.5 - allocTime * 0.2));
+      countUp('score-ram-num', score);
+      $('score-ram-grade').innerHTML = grade(score, [0, 1500, 4000, 9000, 18000], gpu2dLabels);
       $('score-box-ram').style.display = 'block';
-      window._scoreRAM = Math.max(0, score);
-      log(`[RAM] Score: ${Math.max(0, score).toLocaleString()}`, 'log-ok');
+      window._scoreRAM = score;
+      log(`[RAM] ✅ Score: ${score.toLocaleString()}`, 'log-ok');
       ramRunning = false; isAnyRunning = false;
       $('dot-ram').className = 'status-dot done';
       $('btn-start-ram').disabled = false; $('btn-stop-ram').disabled = true;
@@ -2000,7 +2047,7 @@
       $('btn-stop-full').disabled = false;
       $('total-score-box').style.display = 'none';
       // Reset combo bars
-      ['gpu2d', 'gpu3d', 'cpu', 'ram'].forEach(k => {
+      ['gpu2d', 'gpu3d', 'cpu', 'ram', 'storage'].forEach(k => {
         $('bar-' + k).style.width = '0%';
         $('cs-' + k).textContent = '--';
       });
@@ -2038,7 +2085,7 @@
         function frame2D(ts) {
           if (checkStop()) { test2dRunning = false; res(); return; }
           const p = Math.min((ts - test2dStartTime) / 8000, 1);
-          setStage('STAGE 1/4 — 2D GPU', Math.round(p * 22));
+          setStage('STAGE 1/5 — 2D GPU', Math.round(p * 18));
           draw2DFrameSilent(ts);
           if (p >= 1) { test2dRunning = false; res(); return; }
           raf2d = requestAnimationFrame(frame2D);
@@ -2055,7 +2102,7 @@
       log(`[2D] Score: ${s2d.toLocaleString()}`, 'log-ok');
 
       // ---- STAGE 2: 3D GPU ----
-      setStage('STAGE 2/4 — 3D GPU', 25);
+      setStage('STAGE 2/5 — 3D GPU', 20);
       log('[SUITE] Running 3D GPU test...');
       await new Promise(res => {
         const canvas3 = $('bench-canvas-3d');
@@ -2075,7 +2122,7 @@
         function frame3D(ts) {
           if (checkStop()) { test3dRunning = false; res(); return; }
           const p = Math.min((ts - test3dStartTime) / 8000, 1);
-          setStage('STAGE 2/4 — 3D GPU', 25 + Math.round(p * 22));
+          setStage('STAGE 2/5 — 3D GPU', 20 + Math.round(p * 18));
           draw3DFrameSilent(ts);
           if (p >= 1) { test3dRunning = false; res(); return; }
           raf3d = requestAnimationFrame(frame3D);
@@ -2092,45 +2139,97 @@
       log(`[3D] Score: ${s3d.toLocaleString()}`, 'log-ok');
 
       // ---- STAGE 3: CPU ----
-      setStage('STAGE 3/4 — CPU', 50);
+      setStage('STAGE 3/5 — CPU', 40);
       log('[SUITE] Running CPU test...');
       await new Promise(r => setTimeout(r, 10));
       if (!fullSuiteRunning) { finishSuite(); return; }
-      const cpuLimit = 200000;
+      
+      const cpuLimit = 500000;
+      const t0CPU = performance.now();
       const cpuSieve = new Uint8Array(cpuLimit); cpuSieve.fill(1); cpuSieve[0] = cpuSieve[1] = 0;
-      for (let i = 2; i * i < cpuLimit; i++) if (cpuSieve[i]) for (let j = i * i; j < cpuLimit; j += i) cpuSieve[j] = 0;
+      for (let i = 2; i * i < cpuLimit; i++) {
+        if (!cpuSieve[i]) continue;
+        for (let j = i * i; j < cpuLimit; j += i) cpuSieve[j] = 0;
+      }
       const suiteprimes = cpuSieve.reduce((s, v) => s + v, 0);
-      await new Promise(r => setTimeout(r, 20));
-      let sacc = 0, siters = 0; const st0 = performance.now();
-      while (performance.now() - st0 < 600) { for (let i = 0; i < 5000; i++) sacc += Math.sin(i) * Math.cos(i); siters += 5000; }
-      const sopsMs = siters / (performance.now() - st0);
-      setStage('STAGE 3/4 — CPU', 72);
-      const sCPU = Math.round(suiteprimes / 100 + sopsMs * 3);
+      setStage('STAGE 3/5 — CPU', 45);
+      await new Promise(r => setTimeout(r, 10)); if (!fullSuiteRunning) { finishSuite(); return; }
+
+      let sacc = 0, siters = 0;
+      const floatEnd = performance.now() + 1000; // 1s float ops
+      while (performance.now() < floatEnd) {
+        for (let i = 0; i < 50000; i++) sacc += Math.sin(i * 0.001) * Math.cos(i * 0.0013) * Math.sqrt(i + 1);
+        siters += 50000;
+        setStage('STAGE 3/5 — CPU', 45 + Math.min(8, ((siters / 2.5e6) * 8)));
+        await new Promise(r => setTimeout(r, 0));
+        if (!fullSuiteRunning) { finishSuite(); return; }
+      }
+      const sopsPerSec = siters; // ~ops per second since we ran 1s
+
+      const N = 96;
+      const A = new Float64Array(N * N), B = new Float64Array(N * N), C = new Float64Array(N * N);
+      for (let i = 0; i < N * N; i++) { A[i] = Math.random(); B[i] = Math.random(); }
+      let matOps = 0;
+      const matEnd = performance.now() + 600;
+      while (performance.now() < matEnd) {
+        for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+          let s = 0;
+          for (let k = 0; k < N; k++) s += A[i * N + k] * B[k * N + j];
+          C[i * N + j] = s;
+        }
+        matOps++;
+        await new Promise(r => setTimeout(r, 0));
+        if (!fullSuiteRunning) { finishSuite(); return; }
+      }
+
+      setStage('STAGE 3/5 — CPU', 58);
+      
+      const sCPU = Math.round(suiteprimes / 80 + sopsPerSec / 2000 + matOps * 300);
       window._scoreCPU = sCPU;
       $('cs-cpu').textContent = sCPU.toLocaleString();
       $('bar-cpu').style.width = Math.min(100, sCPU / 150) + '%';
       $('dot-cpu').className = 'status-dot done';
-      log(`[CPU] Score: ${sCPU.toLocaleString()}`, 'log-ok');
+      log(`[CPU] Suite Score: ${sCPU.toLocaleString()}`, 'log-ok');
 
       // ---- STAGE 4: RAM ----
-      setStage('STAGE 4/4 — RAM', 75);
+      setStage('STAGE 4/5 — RAM', 60);
       log('[SUITE] Running RAM test...');
       await new Promise(r => setTimeout(r, 10));
       if (!fullSuiteRunning) { finishSuite(); return; }
-      const rn = 4 * 1024 * 1024 / 8;
-      const rbuf = new Float64Array(rn);
-      const rt0 = performance.now();
-      for (let i = 0; i < rn; i++) rbuf[i] = i * 0.001;
-      const rwBW = ((rn * 8) / (1024 ** 3)) / ((performance.now() - rt0) / 1000);
-      const rt1 = performance.now(); let rsum = 0;
-      for (let i = 0; i < rn; i++) rsum += rbuf[i];
-      const rrBW = ((rn * 8) / (1024 ** 3)) / ((performance.now() - rt1) / 1000);
-      const sRAM = Math.round((rwBW + rrBW) * 400);
+      
+      const nRam = (128 * 1024 * 1024) / 8; // 128MB
+      const bufAllocT0 = performance.now();
+      const rbuf = new Float64Array(nRam);
+      const rAllocTime = Math.round(performance.now() - bufAllocT0);
+      setStage('STAGE 4/5 — RAM', 65);
+      await new Promise(r => setTimeout(r, 10)); if (!fullSuiteRunning) { finishSuite(); return; }
+
+      let rTotalWTime = 0;
+      for (let pass = 0; pass < 2; pass++) {
+        const wt0 = performance.now();
+        for (let i = 0; i < nRam; i++) rbuf[i] = i * 0.001;
+        rTotalWTime += performance.now() - wt0;
+        setStage('STAGE 4/5 — RAM', 65 + pass * 5);
+        await new Promise(r => setTimeout(r, 5)); if (!fullSuiteRunning) { finishSuite(); return; }
+      }
+      const rwBW = (nRam * 8 * 2) / (1024 ** 3) / (rTotalWTime / 1000);
+
+      let rTotalRTime = 0, rsum = 0;
+      for (let pass = 0; pass < 2; pass++) {
+        const rt0 = performance.now();
+        for (let i = 0; i < nRam; i++) rsum += rbuf[i];
+        rTotalRTime += performance.now() - rt0;
+        setStage('STAGE 4/5 — RAM', 75 + pass * 4);
+        await new Promise(r => setTimeout(r, 5)); if (!fullSuiteRunning) { finishSuite(); return; }
+      }
+      const rrBW = (nRam * 8 * 2) / (1024 ** 3) / (rTotalRTime / 1000);
+
+      const sRAM = Math.max(0, Math.round((rwBW + rrBW) * 600 - rAllocTime * 0.2));
       window._scoreRAM = sRAM;
       $('cs-ram').textContent = sRAM.toLocaleString();
       $('bar-ram').style.width = Math.min(100, sRAM / 120) + '%';
       $('dot-ram').className = 'status-dot done';
-      log(`[RAM] Score: ${sRAM.toLocaleString()}`, 'log-ok');
+      log(`[RAM] Suite Score: ${sRAM.toLocaleString()}`, 'log-ok');
 
       // ---- STAGE 5: STORAGE ----
       setStage('STAGE 5/5 — STORAGE', 83);
@@ -2367,8 +2466,9 @@
         `GPU (3D): ${(window._score3d||0).toLocaleString()}`,
         `CPU:      ${(window._scoreCPU||0).toLocaleString()}`,
         `RAM:      ${(window._scoreRAM||0).toLocaleString()}`,
+        `Storage:  ${(window._scoreStorage||0).toLocaleString()}`,
         `Latency:  ${(window._scoreLAT||0).toLocaleString()}`,
-        `TOTAL:    ${Math.round(((window._score2d||0)+(window._score3d||0)+(window._scoreCPU||0)+(window._scoreRAM||0))/4).toLocaleString()}`,
+        `TOTAL:    ${Math.round(((window._score2d||0)+(window._score3d||0)+(window._scoreCPU||0)+(window._scoreRAM||0)+(window._scoreStorage||0))/5).toLocaleString()}`,
         '--- System ---',
         `Browser: ${$('si-browser').textContent}`,
         `Platform: ${$('si-platform').textContent}`,
