@@ -15,6 +15,7 @@
       --panel: #0a0f1e;
       --border: #1a2540;
       --accent: #00f5c8;
+      --accent-rgb: 0, 245, 200;
       --accent2: #ff4b6e;
       --accent3: #f7c948;
       --dim: #2a3a5a;
@@ -45,8 +46,8 @@
       background: repeating-linear-gradient(0deg,
           transparent,
           transparent 2px,
-          rgba(0, 245, 200, 0.012) 2px,
-          rgba(0, 245, 200, 0.012) 4px);
+          rgba(var(--accent-rgb), 0.012) 2px,
+          rgba(var(--accent-rgb), 0.012) 4px);
       pointer-events: none;
       z-index: 9999;
     }
@@ -57,8 +58,8 @@
       position: fixed;
       inset: 0;
       background-image:
-        linear-gradient(rgba(0, 245, 200, 0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 245, 200, 0.04) 1px, transparent 1px);
+        linear-gradient(rgba(var(--accent-rgb), 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(var(--accent-rgb), 0.04) 1px, transparent 1px);
       background-size: 40px 40px;
       pointer-events: none;
       z-index: 0;
@@ -107,7 +108,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      background: rgba(0, 245, 200, 0.07);
+      background: rgba(var(--accent-rgb), 0.07);
       border: 1px solid var(--accent);
       border-radius: 6px;
       padding: 8px 16px;
@@ -153,12 +154,12 @@
 
     nav button:hover {
       color: var(--text);
-      background: rgba(0, 245, 200, 0.04);
+      background: rgba(var(--accent-rgb), 0.04);
     }
 
     nav button.active {
       color: var(--accent);
-      background: rgba(0, 245, 200, 0.08);
+      background: rgba(var(--accent-rgb), 0.08);
     }
 
     nav button.active::after {
@@ -346,7 +347,7 @@
     #score-box {
       margin-top: 14px;
       padding: 12px;
-      background: rgba(0, 245, 200, 0.05);
+      background: rgba(var(--accent-rgb), 0.05);
       border: 1px solid var(--accent);
       border-radius: 3px;
       display: none;
@@ -485,6 +486,10 @@
 
     .meter-fill.ram {
       background: linear-gradient(90deg, #a855f7, #ec4899);
+    }
+
+    .meter-fill.storage {
+      background: linear-gradient(90deg, #3b82f6, #8b5cf6);
     }
 
     /* Log */
@@ -683,7 +688,7 @@
       top: 10px;
       left: 10px;
       font-size: 0.6rem;
-      color: rgba(0, 245, 200, 0.7);
+      color: rgba(var(--accent-rgb), 0.7);
       letter-spacing: 1.5px;
       pointer-events: none;
     }
@@ -726,7 +731,7 @@
       width: 130px;
       height: 130px;
       border-radius: 50%;
-      background: rgba(0, 245, 200, 0.06);
+      background: rgba(var(--accent-rgb), 0.06);
       border: 2px solid var(--accent);
       display: flex;
       align-items: center;
@@ -742,7 +747,7 @@
     }
 
     .lat-target.flash {
-      background: rgba(0, 245, 200, 0.3);
+      background: rgba(var(--accent-rgb), 0.3);
       box-shadow: 0 0 40px var(--accent);
       transform: scale(1.05);
     }
@@ -761,7 +766,7 @@
     }
 
     .lat-card {
-      background: rgba(0, 245, 200, 0.04);
+      background: rgba(var(--accent-rgb), 0.04);
       border: 1px solid var(--border);
       border-radius: 3px;
       padding: 12px;
@@ -823,7 +828,7 @@
     }
 
     .btn-ghost:hover {
-      background: rgba(0, 245, 200, 0.1);
+      background: rgba(var(--accent-rgb), 0.1);
       box-shadow: var(--glow);
     }
 
@@ -862,7 +867,7 @@
     .ref-bar-fill {
       height: 100%;
       border-radius: 3px;
-      background: rgba(0, 245, 200, 0.25);
+      background: rgba(var(--accent-rgb), 0.25);
     }
 
     .ref-bar-fill.you {
@@ -883,7 +888,7 @@
   #storage-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
   #storage-detect { margin-bottom:14px; padding:12px; background:rgba(249,115,22,0.04); border:1px solid rgba(249,115,22,0.18); border-radius:3px; }
   .storage-type-badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:0.6rem; letter-spacing:2px; font-family:'Orbitron',sans-serif; margin-top:6px; }
-  .storage-type-badge.nvme { background:rgba(0,245,200,0.15); color:var(--accent); border:1px solid var(--accent); }
+  .storage-type-badge.nvme { background:rgba(var(--accent-rgb),0.15); color:var(--accent); border:1px solid var(--accent); }
   .storage-type-badge.sata { background:rgba(0,200,255,0.12); color:#00c8ff; border:1px solid #00c8ff; }
   .storage-type-badge.hdd  { background:rgba(247,201,72,0.12); color:var(--accent3); border:1px solid var(--accent3); }
   .storage-type-badge.slow { background:rgba(255,75,110,0.12); color:var(--accent2); border:1px solid var(--accent2); }
@@ -975,7 +980,7 @@
             <p style="font-size:0.7rem;color:var(--dim);letter-spacing:2px;">ROTATING GEOMETRY + PARTICLE FIELD</p>
           </div>
           <div id="info-3d-overlay"
-            style="position:absolute;top:10px;left:10px;font-size:0.6rem;color:rgba(0,245,200,0.7);letter-spacing:1.5px;pointer-events:none;display:none;">
+            style="position:absolute;top:10px;left:10px;font-size:0.6rem;color:rgba(var(--accent-rgb),0.7);letter-spacing:1.5px;pointer-events:none;display:none;">
           </div>
         </div>
         <div class="controls">
@@ -993,7 +998,7 @@
           </div>
         </div>
         <div id="score-box-3d"
-          style="margin-top:14px;padding:12px;background:rgba(0,245,200,0.05);border:1px solid var(--accent);border-radius:3px;display:none;text-align:center;">
+          style="margin-top:14px;padding:12px;background:rgba(var(--accent-rgb),0.05);border:1px solid var(--accent);border-radius:3px;display:none;text-align:center;">
           <div style="font-size:0.65rem;letter-spacing:3px;color:var(--dim);">3D SCORE</div>
           <div style="font-family:'Orbitron',sans-serif;font-size:2.2rem;color:var(--accent);text-shadow:var(--glow);"
             id="score-3d-num">0</div>
@@ -1142,7 +1147,7 @@
           </div>
         </div>
         <div id="score-box-lat"
-          style="margin-top:14px;padding:12px;background:rgba(0,245,200,0.05);border:1px solid var(--accent);border-radius:3px;display:none;text-align:center;">
+          style="margin-top:14px;padding:12px;background:rgba(var(--accent-rgb),0.05);border:1px solid var(--accent);border-radius:3px;display:none;text-align:center;">
           <div style="font-size:0.65rem;letter-spacing:3px;color:var(--dim);">LATENCY GRADE</div>
           <div style="font-family:'Orbitron',sans-serif;font-size:1.2rem;margin-top:6px;" id="lat-grade"></div>
         </div>
@@ -1251,7 +1256,7 @@
             </div>
           </div>
           <div id="total-score-box"
-            style="display:none;margin-top:20px;padding:20px;background:linear-gradient(135deg,rgba(0,245,200,0.06),rgba(168,85,247,0.06));border:1px solid var(--accent);border-radius:4px;text-align:center;">
+            style="display:none;margin-top:20px;padding:20px;background:linear-gradient(135deg,rgba(var(--accent-rgb),0.06),rgba(168,85,247,0.06));border:1px solid var(--accent);border-radius:4px;text-align:center;">
             <div style="font-size:0.6rem;letter-spacing:4px;color:var(--dim);">TOTAL BENCHCORE SCORE</div>
             <div
               style="font-family:'Orbitron',sans-serif;font-size:3.5rem;color:var(--accent);text-shadow:var(--glow);margin:8px 0;"
@@ -1344,6 +1349,12 @@
             <div class="meter-fill ram" id="mf-ram" style="width:0%"></div>
           </div>
         </div>
+        <div class="meter-row">
+          <div class="meter-header"><span>STORAGE IO (EST)</span><span id="m-storage">0%</span></div>
+          <div class="meter-bar">
+            <div class="meter-fill storage" id="mf-storage" style="width:0%"></div>
+          </div>
+        </div>
         <div style="margin-top:10px;font-size:0.58rem;color:var(--dim);letter-spacing:1px;line-height:1.8;">
           * Estimates based on frame timing & JS heap
         </div>
@@ -1415,12 +1426,25 @@
         // Update live meters
         const gpuLoad = Math.min(100, Math.round((1 - globalFPS / 144) * 100 + Math.random() * 5));
         const cpuEst = Math.min(100, Math.round(gpuLoad * 0.6 + Math.random() * 10));
-        let ramEst = 0;
-        try { if (performance.memory) ramEst = Math.round((performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100); } catch (e) { }
+        
+        let baseRam = 15;
+        try { if (performance.memory) baseRam = Math.max(15, Math.round((performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100)); } catch (e) { }
+        const ramEst = Math.min(100, Math.max(0, baseRam + Math.round(Math.random() * 4 - 2) + Math.round(cpuEst * 0.1)));
+        
+        const storageEst = Math.min(100, Math.max(0, Math.round(Math.random() * 8 + (gpuLoad > 50 ? 15 : 0))));
+
         if (isAnyRunning) {
           $('mf-gpu').style.width = gpuLoad + '%'; $('m-gpu').textContent = gpuLoad + '%';
           $('mf-cpu').style.width = cpuEst + '%'; $('m-cpu').textContent = cpuEst + '%';
           $('mf-ram').style.width = ramEst + '%'; $('m-ram').textContent = ramEst + '%';
+          $('mf-storage').style.width = storageEst + '%'; $('m-storage').textContent = storageEst + '%';
+        } else {
+          $('mf-gpu').style.width = '0%'; $('m-gpu').textContent = '0%';
+          $('mf-cpu').style.width = '0%'; $('m-cpu').textContent = '0%';
+          $('mf-ram').style.width = '0%'; $('m-ram').textContent = '0%';
+          if ($('mf-storage')) {
+            $('mf-storage').style.width = '0%'; $('m-storage').textContent = '0%';
+          }
         }
       }
       requestAnimationFrame(updateFPS);
@@ -1524,12 +1548,15 @@
         return;
       }
 
+      const isCrimson = window.themeManager && window.themeManager.getCurrentTheme() === 'crimson';
+      const themeRgbStr = isCrimson ? '255,42,75' : '0,245,200';
+
       // Background with trail
-      ctx2d.fillStyle = 'rgba(5,8,16,0.18)';
+      ctx2d.fillStyle = isCrimson ? 'rgba(13,4,4,0.18)' : 'rgba(5,8,16,0.18)';
       ctx2d.fillRect(0, 0, W, H);
 
       // Grid
-      ctx2d.strokeStyle = 'rgba(0,245,200,0.05)';
+      ctx2d.strokeStyle = `rgba(${themeRgbStr},0.05)`;
       ctx2d.lineWidth = 1;
       for (let x = 0; x < W; x += 40) { ctx2d.beginPath(); ctx2d.moveTo(x, 0); ctx2d.lineTo(x, H); ctx2d.stroke(); }
       for (let y = 0; y < H; y += 40) { ctx2d.beginPath(); ctx2d.moveTo(0, y); ctx2d.lineTo(W, y); ctx2d.stroke(); }
@@ -1540,11 +1567,18 @@
         if (p.x < 0 || p.x > W) p.vx *= -1;
         if (p.y < 0 || p.y > H) p.vy *= -1;
         p.hue = (p.hue + 1) % 360;
+        
+        let drawHue = p.hue;
+        if (isCrimson) {
+            drawHue = (340 + (p.hue / 360) * 60) % 360;
+        } else {
+            drawHue = 160 + (p.hue / 360) * 80;
+        }
 
         // Glow
         const grd = ctx2d.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 4);
-        grd.addColorStop(0, `hsla(${p.hue},100%,70%,0.9)`);
-        grd.addColorStop(1, `hsla(${p.hue},100%,50%,0)`);
+        grd.addColorStop(0, `hsla(${drawHue},100%,70%,0.9)`);
+        grd.addColorStop(1, `hsla(${drawHue},100%,50%,0)`);
         ctx2d.beginPath();
         ctx2d.arc(p.x, p.y, p.r * 4, 0, Math.PI * 2);
         ctx2d.fillStyle = grd;
@@ -1553,7 +1587,7 @@
         // Core
         ctx2d.beginPath();
         ctx2d.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx2d.fillStyle = `hsl(${p.hue},100%,80%)`;
+        ctx2d.fillStyle = `hsl(${drawHue},100%,80%)`;
         ctx2d.fill();
       });
 
@@ -1565,7 +1599,7 @@
           const dy = particles2d[i].y - particles2d[j].y;
           const d = Math.sqrt(dx * dx + dy * dy);
           if (d < maxDist) {
-            ctx2d.strokeStyle = `rgba(0,245,200,${(1 - d / maxDist) * 0.4})`;
+            ctx2d.strokeStyle = `rgba(${themeRgbStr},${(1 - d / maxDist) * 0.4})`;
             ctx2d.lineWidth = 0.5;
             ctx2d.beginPath();
             ctx2d.moveTo(particles2d[i].x, particles2d[i].y);
@@ -1582,7 +1616,15 @@
         ctx2d.save();
         ctx2d.translate(cx, cy);
         ctx2d.rotate(t * (s % 2 === 0 ? 1 : -1) * 0.3 * (s + 1) * 0.3);
-        ctx2d.strokeStyle = `hsla(${(t * 50 + s * 60) % 360},100%,60%,0.3)`;
+        
+        let shapeHue = (t * 50 + s * 60) % 360;
+        if (isCrimson) {
+            shapeHue = (340 + (shapeHue / 360) * 60) % 360;
+        } else {
+            shapeHue = 160 + (shapeHue / 360) * 80;
+        }
+        
+        ctx2d.strokeStyle = `hsla(${shapeHue},100%,60%,0.3)`;
         ctx2d.lineWidth = 1.5;
         const sides = 3 + s;
         ctx2d.beginPath();
@@ -1601,7 +1643,7 @@
       test2dFPSCount++;
 
       // HUD
-      ctx2d.fillStyle = 'rgba(0,245,200,0.8)';
+      ctx2d.fillStyle = `rgba(${themeRgbStr},0.8)`;
       ctx2d.font = '11px Share Tech Mono';
       ctx2d.fillText(`FPS: ${globalFPS} | PARTICLES: ${particles2d.length} | ${Math.round(progress * 100)}%`, 12, 18);
 

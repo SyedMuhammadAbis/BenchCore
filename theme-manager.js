@@ -10,7 +10,10 @@
 
         toggleTheme() {
             const currentTheme = this.getCurrentTheme();
-            const newTheme = currentTheme === 'default' ? 'crimson' : 'default';
+            let newTheme;
+            if (currentTheme === 'default') newTheme = 'crimson';
+            else if (currentTheme === 'crimson') newTheme = 'cyberpunk';
+            else newTheme = 'default';
             this.setTheme(newTheme);
             
             // Dispatch a custom event in case components need to redraw immediately
@@ -24,7 +27,8 @@
             // Update toggle switch UI if it exists
             const toggleIcon = document.getElementById('theme-toggle-icon');
             if (toggleIcon) {
-                toggleIcon.textContent = themeName === 'default' ? 'CYAN' : 'CRIMSON';
+                const names = { 'default': 'CYAN', 'crimson': 'CRIMSON', 'cyberpunk': 'NEON' };
+                toggleIcon.textContent = names[themeName] || 'CYAN';
             }
         },
 
