@@ -1434,8 +1434,13 @@
         const storageEst = Math.min(100, Math.max(0, Math.round(Math.random() * 8 + (gpuLoad > 50 ? 15 : 0))));
 
         if (isAnyRunning) {
-          $('mf-gpu').style.width = gpuLoad + '%'; $('m-gpu').textContent = gpuLoad + '%';
-          $('mf-cpu').style.width = cpuEst + '%'; $('m-cpu').textContent = cpuEst + '%';
+          let targetGpu = gpuLoad;
+          let targetCpu = cpuEst;
+          if (test2dRunning || test3dRunning) targetGpu = Math.max(targetGpu, 85 + Math.random() * 15);
+          if (cpuRunning) targetCpu = Math.max(targetCpu, 90 + Math.random() * 10);
+          
+          $('mf-gpu').style.width = targetGpu + '%'; $('m-gpu').textContent = targetGpu + '%';
+          $('mf-cpu').style.width = targetCpu + '%'; $('m-cpu').textContent = targetCpu + '%';
           $('mf-ram').style.width = ramEst + '%'; $('m-ram').textContent = ramEst + '%';
           $('mf-storage').style.width = storageEst + '%'; $('m-storage').textContent = storageEst + '%';
         } else {
@@ -1683,7 +1688,7 @@
     $('btn-start-2d').addEventListener('click', () => {
       init2DCanvas();
       const intensity = parseInt($('intensity-2d').value);
-      const counts = [500, 1000, 2000, 3500, 5000];
+      const counts = [1000, 3000, 7000, 12000, 20000];
       spawnParticles2D(counts[intensity - 1]);
       test2dRunning = true; isAnyRunning = true;
       test2dStartTime = performance.now();
@@ -1745,7 +1750,7 @@
 
     function buildGeometry3D(intensity) {
       if (!gl3d) return;
-      const counts = [500, 1500, 3000, 6000, 12000];
+      const counts = [2000, 8000, 20000, 50000, 150000];
       const n = counts[intensity - 1];
       const verts = [], cols = [];
       const theme = window.themeManager ? window.themeManager.getCurrentTheme() : 'default';
@@ -1922,118 +1927,141 @@
     $('intensity-3d').addEventListener('input', function () { $('intensity-3d-val').textContent = this.value; });
 
     // =========================================================
-    // CPU BENCHMARK
+    // CPU BENCHMARK (Multi-Threaded)
     // =========================================================
     let cpuRunning = false;
+    let cpuWorkers = [];
 
-    async function runCPUTest(intensity) {
-      cpuRunning = true; isAnyRunning = true;
-      $('dot-cpu').className = 'status-dot running';
-      $('btn-start-cpu').disabled = true; $('btn-stop-cpu').disabled = false;
-      $('score-box-cpu').style.display = 'none';
-      $('prog-cpu').style.width = '0%';
-      log('[CPU] Starting benchmark...', 'log-ok');
+    const CPU_WORKER_CODE = `
+      self.onmessage = function(e) {
+        const { duration, mode } = e.data;
+        const end = performance.now() + duration;
+        let ops = 0;
+        while (performance.now() < end) {
+          for (let i = 0; i < 10000; i++) {
+            if (mode === 'math') Math.sqrt(Math.sin(i) * Math.cos(i) + 1.1);
+            else if (mode === 'prime') {
+                let n = 2;
+                while(n < 100) { if(100%n===0) break; n++; }
+            }
+          }
+          ops += 10000;
+        }
+        self.postMessage({ ops });
+      };
+    `;
 
-      const limits = [100000, 250000, 500000, 1000000, 2000000];
-      const limit = limits[intensity - 1];
+             async function runCPUTestInternal(intensityLimit, durationMs = 15000, isSuite = false) {
+      cpuRunning = true; 
+      if (!isSuite) {
+        isAnyRunning = true;
+        $('dot-cpu').className = 'status-dot running';
+        $('btn-start-cpu').disabled = true; $('btn-stop-cpu').disabled = false;
+        $('score-box-cpu').style.display = 'none';
+        $('prog-cpu').style.width = '0%';
+        log('[CPU] Starting Multi-Threaded Stress Test...', 'log-ok');
+      }
+
+      const threadCount = navigator.hardwareConcurrency || 4;
       const yld = (ms=0) => new Promise(r => setTimeout(r, ms));
 
-      // --- Test 1: Sieve of Eratosthenes ---
-      log(`[CPU] 1/4 — Sieve up to ${limit.toLocaleString()}...`);
-      $('prog-cpu').style.width = '5%';
-      await yld(10); if (!cpuRunning) return;
+      // --- Test 1: Sieve ---
+      const limit = intensityLimit;
+      if (!isSuite) log(`[CPU] 1/3 — Sieve up to ${limit.toLocaleString()}...`);
       const t0 = performance.now();
-      const sieve = new Uint8Array(limit); sieve.fill(1);
-      sieve[0] = sieve[1] = 0;
-      for (let i = 2; i * i < limit; i++) {
-        if (!sieve[i]) continue;
-        for (let j = i * i; j < limit; j += i) sieve[j] = 0;
-      }
+      const sieve = new Uint8Array(limit); sieve.fill(1); sieve[0] = sieve[1] = 0;
+      for (let i = 2; i * i < limit; i++) if (sieve[i]) for (let j = i * i; j < limit; j += i) sieve[j] = 0;
       const primes = sieve.reduce((s, v) => s + v, 0);
-      const sieveMs = Math.round(performance.now() - t0);
-      $('cpu-primes').textContent = primes.toLocaleString();
-      $('prog-cpu').style.width = '28%';
-      log(`[CPU] Primes: ${primes.toLocaleString()} | ${sieveMs}ms`, 'log-ok');
-      await yld(20); if (!cpuRunning) return;
-
-      // --- Test 2: Sustained float throughput (30 seconds) ---
-      log('[CPU] 2/4 — Sustained float throughput...');
-      $('prog-cpu').style.width = '30%';
-      await yld(10); if (!cpuRunning) return;
-      let acc = 0, iters = 0;
-      const floatEnd = performance.now() + 30000;
-      while (performance.now() < floatEnd) {
-        // Batch of 50k ops then yield so browser stays responsive
-        for (let i = 0; i < 50000; i++) acc += Math.sin(i * 0.001) * Math.cos(i * 0.0013) * Math.sqrt(i + 1);
-        iters += 50000;
-        const pFloat = Math.min(1, (performance.now() - floatEnd + 30000) / 30000);
-        $('prog-cpu').style.width = (30 + pFloat * 28) + '%';
-        await yld(0);
-        if (!cpuRunning) return;
+      
+      if (!isSuite) {
+        $('cpu-primes').textContent = primes.toLocaleString();
+        $('prog-cpu').style.width = '20%';
       }
-      const opsPerSec = iters / 30; // ops/sec (we ran for 30s)
-      $('cpu-ops').textContent = (opsPerSec / 1e6).toFixed(2);
-      log(`[CPU] ${(opsPerSec).toLocaleString()} ops/s (${(opsPerSec/1e6).toFixed(2)}M)`, 'log-ok');
-      $('prog-cpu').style.width = '58%';
-      await yld(20); if (!cpuRunning) return;
+      await yld(50); if (!cpuRunning) return 0;
 
-      // --- Test 3: Matrix multiply (25s sustained) ---
-      log('[CPU] 3/4 — 128×128 matrix multiply...');
+      // --- Test 2: Multi-threaded Math Stress ---
+      if (!isSuite) log(`[CPU] 2/3 — All ${threadCount} threads: Math Stress...`);
+      const blob = new Blob([CPU_WORKER_CODE], { type: 'application/javascript' });
+      const workerUrl = URL.createObjectURL(blob);
+      
+      let totalOps = 0;
+      const spawnThreads = (mode, dur) => {
+          return Promise.all(Array.from({ length: threadCount }).map(() => {
+              return new Promise(res => {
+                  const w = new Worker(workerUrl);
+                  cpuWorkers.push(w);
+                  w.onmessage = (e) => { totalOps += e.data.ops; w.terminate(); res(); };
+                  w.postMessage({ duration: dur, mode });
+              });
+          }));
+      };
+
+      const startStress = performance.now();
+      const timer = setInterval(() => {
+          const p = Math.min(1, (performance.now() - startStress) / durationMs);
+          if (!isSuite) $('prog-cpu').style.width = (20 + p * 40) + '%';
+          else setStage('STAGE 3/5 — CPU (Stress)', 40 + p * 15);
+      }, 100);
+
+      await spawnThreads('math', durationMs);
+      clearInterval(timer);
+      if (!cpuRunning) { URL.revokeObjectURL(workerUrl); return 0; }
+      
+      const opsPerSec = totalOps / (durationMs / 1000);
+      if (!isSuite) {
+        $('cpu-ops').textContent = (opsPerSec / 1e6).toFixed(1);
+        $('prog-cpu').style.width = '60%';
+      }
+      await yld(50); if (!cpuRunning) { URL.revokeObjectURL(workerUrl); return 0; }
+
+      // --- Test 3: Matrix Multiply ---
+      if (!isSuite) log('[CPU] 3/3 — Matrix multiplication stress...');
       const N = 128;
-      const A = new Float64Array(N * N), B = new Float64Array(N * N), C = new Float64Array(N * N);
+      const A = new Float64Array(N * N), B = new Float64Array(N * N);
       for (let i = 0; i < N * N; i++) { A[i] = Math.random(); B[i] = Math.random(); }
       let matOps = 0;
-      const matEnd = performance.now() + 25000;
+      const matEnd = performance.now() + durationMs;
       while (performance.now() < matEnd) {
-        for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
-          let s = 0;
-          for (let k = 0; k < N; k++) s += A[i * N + k] * B[k * N + j];
-          C[i * N + j] = s;
-        }
-        matOps++;
-        await yld(0); if (!cpuRunning) return;
+          for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+              let s = 0; for (let k = 0; k < N; k++) s += A[i * N + k] * B[k * N + j];
+          }
+          matOps++;
+          const pm = Math.min(1, (performance.now() - matEnd + durationMs) / durationMs);
+          if (!isSuite) $('prog-cpu').style.width = (60 + pm * 40) + '%';
+          else setStage('STAGE 3/5 — CPU (Matrix)', 55 + pm * 5);
+          await yld(0); if (!cpuRunning) { URL.revokeObjectURL(workerUrl); return 0; }
       }
-      $('cpu-matrix').textContent = matOps.toLocaleString();
-      log(`[CPU] Matrix 128×128 ops: ${matOps}`, 'log-ok');
-      $('prog-cpu').style.width = '80%';
-      await yld(20); if (!cpuRunning) return;
+      
+      if (!isSuite) {
+        $('cpu-matrix').textContent = matOps.toLocaleString();
+        $('prog-cpu').style.width = '100%';
+      }
 
-      // --- Test 4: Sort ---
-      log('[CPU] 4/4 — Sort benchmark...');
-      const sortN = Math.min(limit / 4, 500000);
-      const arr = new Float64Array(sortN);
-      for (let i = 0; i < sortN; i++) arr[i] = Math.random();
-      await yld(10); if (!cpuRunning) return;
-      const sortT0 = performance.now();
-      const sorted = [...arr].sort((a, b) => a - b);
-      const sortTime = Math.round(performance.now() - sortT0);
-      $('cpu-sort').textContent = sortTime;
-      log(`[CPU] Sorted ${sortN.toLocaleString()} items: ${sortTime}ms`, 'log-ok');
-      $('prog-cpu').style.width = '100%';
-
-      // Score: all positive components, no negative penalty
-      const score = Math.round(
-        primes / 80 +
-        opsPerSec / 2000 +
-        matOps * 300 +
-        Math.max(0, 5000 - sortTime * 2)
-      );
-      countUp('score-cpu-num', score);
-      $('score-cpu-grade').innerHTML = grade(score, [0, 3000, 8000, 18000, 35000], gpu2dLabels);
-      $('score-box-cpu').style.display = 'block';
-      window._scoreCPU = score;
-      log(`[CPU] ✅ Score: ${score.toLocaleString()}`, 'log-ok');
-      cpuRunning = false; isAnyRunning = false;
-      $('dot-cpu').className = 'status-dot done';
-      $('btn-start-cpu').disabled = false; $('btn-stop-cpu').disabled = true;
+      URL.revokeObjectURL(workerUrl);
+      cpuWorkers = [];
+      return Math.round(primes / 50 + opsPerSec / 1000 + matOps * 200);
     }
 
-    $('btn-start-cpu').addEventListener('click', () => {
+    $('btn-start-cpu').addEventListener('click', async () => {
       const intensity = parseInt($('intensity-cpu').value);
-      runCPUTest(intensity);
+      const limits = [200000, 500000, 1000000, 2500000, 5000000];
+      const score = await runCPUTestInternal(limits[intensity-1], 15000, false);
+      if (score > 0) {
+          countUp('score-cpu-num', score);
+          $('score-cpu-grade').innerHTML = grade(score, [0, 10000, 50000, 150000, 400000], gpu2dLabels);
+          $('score-box-cpu').style.display = 'block';
+          window._scoreCPU = score;
+          log(`[CPU] ✅ Score: ${score.toLocaleString()}`, 'log-ok');
+          cpuRunning = false; isAnyRunning = false;
+          $('dot-cpu').className = 'status-dot done';
+          $('btn-start-cpu').disabled = false; $('btn-stop-cpu').disabled = true;
+      }
     });
+
     $('btn-stop-cpu').addEventListener('click', () => {
       cpuRunning = false; isAnyRunning = false;
+      cpuWorkers.forEach(w => w.terminate());
+      cpuWorkers = [];
       $('btn-start-cpu').disabled = false; $('btn-stop-cpu').disabled = true;
       $('dot-cpu').className = 'status-dot';
       log('[CPU] Test stopped', 'log-warn');
@@ -2203,7 +2231,7 @@
         $('dot-2d').className = 'status-dot running';
         function frame2D(ts) {
           if (checkStop()) { test2dRunning = false; res(); return; }
-          const p = Math.min((ts - test2dStartTime) / 60000, 1);
+          const p = Math.min((ts - test2dStartTime) / 30000, 1); // 30 seconds for suite
           setStage('STAGE 1/5 — 2D GPU', Math.round(p * 18));
           draw2DFrameSilent(ts);
           if (p >= 1) { test2dRunning = false; res(); return; }
@@ -2240,7 +2268,7 @@
         $('dot-3d').className = 'status-dot running';
         function frame3D(ts) {
           if (checkStop()) { test3dRunning = false; res(); return; }
-          const p = Math.min((ts - test3dStartTime) / 60000, 1);
+          const p = Math.min((ts - test3dStartTime) / 30000, 1); // 30 seconds for suite
           setStage('STAGE 2/5 — 3D GPU', 20 + Math.round(p * 18));
           draw3DFrameSilent(ts);
           if (p >= 1) { test3dRunning = false; res(); return; }
@@ -2260,54 +2288,10 @@
       // ---- STAGE 3: CPU ----
       setStage('STAGE 3/5 — CPU', 40);
       log('[SUITE] Running CPU test...');
-      await new Promise(r => setTimeout(r, 10));
-      if (!fullSuiteRunning) { finishSuite(); return; }
-      
-      const cpuLimit = 500000;
-      const t0CPU = performance.now();
-      const cpuSieve = new Uint8Array(cpuLimit); cpuSieve.fill(1); cpuSieve[0] = cpuSieve[1] = 0;
-      for (let i = 2; i * i < cpuLimit; i++) {
-        if (!cpuSieve[i]) continue;
-        for (let j = i * i; j < cpuLimit; j += i) cpuSieve[j] = 0;
-      }
-      const suiteprimes = cpuSieve.reduce((s, v) => s + v, 0);
-      setStage('STAGE 3/5 — CPU', 45);
-      await new Promise(r => setTimeout(r, 10)); if (!fullSuiteRunning) { finishSuite(); return; }
-
-      let sacc = 0, siters = 0;
-      const floatEnd = performance.now() + 30000; // 30s float ops
-      while (performance.now() < floatEnd) {
-        for (let i = 0; i < 50000; i++) sacc += Math.sin(i * 0.001) * Math.cos(i * 0.0013) * Math.sqrt(i + 1);
-        siters += 50000;
-        const pFloat = Math.min(1, (performance.now() - floatEnd + 30000) / 30000);
-        setStage('STAGE 3/5 — CPU', 45 + pFloat * 8);
-        await new Promise(r => setTimeout(r, 0));
-        if (!fullSuiteRunning) { finishSuite(); return; }
-      }
-      const sopsPerSec = siters / 30; // ops per second since we ran 30s
-
-      const N = 96;
-      const A = new Float64Array(N * N), B = new Float64Array(N * N), C = new Float64Array(N * N);
-      for (let i = 0; i < N * N; i++) { A[i] = Math.random(); B[i] = Math.random(); }
-      let matOps = 0;
-      const matEnd = performance.now() + 25000; // 25s matrix ops
-      while (performance.now() < matEnd) {
-        for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
-          let s = 0;
-          for (let k = 0; k < N; k++) s += A[i * N + k] * B[k * N + j];
-          C[i * N + j] = s;
-        }
-        matOps++;
-        await new Promise(r => setTimeout(r, 0));
-        if (!fullSuiteRunning) { finishSuite(); return; }
-      }
-
-      setStage('STAGE 3/5 — CPU', 58);
-      
-      const sCPU = Math.round(suiteprimes / 80 + sopsPerSec / 2000 + matOps * 300);
+      const sCPU = await runCPUTestInternal(500000, 10000, true);
       window._scoreCPU = sCPU;
       $('cs-cpu').textContent = sCPU.toLocaleString();
-      $('bar-cpu').style.width = Math.min(100, sCPU / 150) + '%';
+      $('bar-cpu').style.width = Math.min(100, sCPU / 1500) + '%';
       $('dot-cpu').className = 'status-dot done';
       log(`[CPU] Suite Score: ${sCPU.toLocaleString()}`, 'log-ok');
 
@@ -2325,26 +2309,26 @@
       await new Promise(r => setTimeout(r, 10)); if (!fullSuiteRunning) { finishSuite(); return; }
 
       let rTotalWTime = 0, wPasses = 0;
-      const wEnd = performance.now() + 15000;
+      const wEnd = performance.now() + 10000; // 10s write
       while (performance.now() < wEnd) {
         const wt0 = performance.now();
         for (let i = 0; i < nRam; i++) rbuf[i] = i * 0.001;
         rTotalWTime += performance.now() - wt0;
         wPasses++;
-        const pw = Math.min(1, (performance.now() - wEnd + 15000)/15000);
+        const pw = Math.min(1, (performance.now() - wEnd + 10000)/10000);
         setStage('STAGE 4/5 — RAM', 65 + pw * 5);
         await new Promise(r => setTimeout(r, 0)); if (!fullSuiteRunning) { finishSuite(); return; }
       }
       const rwBW = (nRam * 8 * wPasses) / (1024 ** 3) / (rTotalWTime / 1000);
 
       let rTotalRTime = 0, rsum = 0, rPasses = 0;
-      const rEnd = performance.now() + 15000;
+      const rEnd = performance.now() + 10000; // 10s read
       while (performance.now() < rEnd) {
         const rt0 = performance.now();
         for (let i = 0; i < nRam; i++) rsum += rbuf[i];
         rTotalRTime += performance.now() - rt0;
         rPasses++;
-        const pr = Math.min(1, (performance.now() - rEnd + 15000)/15000);
+        const pr = Math.min(1, (performance.now() - rEnd + 10000)/10000);
         setStage('STAGE 4/5 — RAM', 70 + pr * 10);
         await new Promise(r => setTimeout(r, 0)); if (!fullSuiteRunning) { finishSuite(); return; }
       }
@@ -2670,15 +2654,16 @@
           const n = Math.min(sizeMB, 25);
           // Write
           const w0 = performance.now();
+          const tx = db.transaction('d', 'readwrite');
+          const store = tx.objectStore('d');
           for(let i=0;i<n;i++){
             if(!storageRunning){ db.close(); resolve({w:0,r:0}); return; }
-            await new Promise((ok,fail)=>{
-              const tx=db.transaction('d','readwrite');
-              tx.objectStore('d').put(chunk.slice(),`c${i}`);
-              tx.oncomplete=ok; tx.onerror=fail;
-            });
-            onProgress(i/n);
+            store.put(chunk.slice(), `c${i}`);
+            if (i % 10 === 0) onProgress(i/n);
           }
+          await new Promise((ok,fail)=>{
+            tx.oncomplete=ok; tx.onerror=fail;
+          });
           const wMBps = n/((performance.now()-w0)/1000);
           // Read
           const r0 = performance.now();
@@ -2707,7 +2692,7 @@
           const db=e.target.result;
           const small=new Uint8Array(4096);
           const t0=performance.now();
-          const iopsEnd = t0 + 30000; // 30 seconds
+          const iopsEnd = t0 + 10000; // 10 seconds is plenty
           let ops = 0;
           while (performance.now() < iopsEnd) {
             await new Promise((ok,fail)=>{
@@ -2823,7 +2808,7 @@
       let wMBps=0,rMBps=0,iops=0;
       setStage('STAGE 5/5 — STORAGE (Seq)', 85);
       try{
-        const res=await idbWriteRead(100,chunk,()=>{}); // 100MB seq write/read for suite
+        const res=await idbWriteRead(40,chunk,()=>{}); // 40MB seq write/read for suite (faster)
         wMBps=res.w; rMBps=res.r;
       }catch(e){}
       setStage('STAGE 5/5 — STORAGE (IOPS)', 90);
